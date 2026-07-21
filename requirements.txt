@@ -1,0 +1,20 @@
+# Core dependencies (pinned to the versions Stage 0 was developed and validated on).
+# Python 3.12.
+
+# Optimization: perfect-foresight LP + duals
+cvxpy==1.9.2
+highspy==1.15.1          # HiGHS solver backend
+
+# Numerics / data
+numpy==2.5.1
+pandas==2.3.3
+pyarrow==25.0.0          # parquet cache
+
+# ERCOT ingest
+requests==2.34.2
+python-dotenv==1.2.2     # loads .env credentials
+python-calamine==0.8.2   # reads ERCOT's non-standard .xlsx MCPC bundles
+openpyxl==3.1.5
+
+# Added in Stage 1 (SQL warehouse)
+duckdb
