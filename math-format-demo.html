@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Math rendering demo — ERCOT battery project</title>
+<script>
+  window.MathJax = {
+    tex: { inlineMath: [['\\(', '\\)'], ['$', '$']], displayMath: [['\\[', '\\]'], ['$$', '$$']] },
+    svg: { fontCache: 'global' }
+  };
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" async></script>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    max-width: 46rem; margin: 3rem auto; padding: 0 1.25rem;
+    font: 17px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: #fbfbf9; color: #1a1a1a;
+  }
+  @media (prefers-color-scheme: dark) {
+    body { background: #16161a; color: #e6e6e6; }
+    hr { border-color: #333; }
+    .note { color: #a8a8a8; }
+  }
+  h1 { font-size: 1.5rem; } h2 { font-size: 1.15rem; margin-top: 2.2rem; }
+  hr { border: none; border-top: 1px solid #ddd; margin: 2rem 0; }
+  .note { color: #666; font-size: 0.95rem; }
+  .box { padding: 0.4rem 1rem; border-left: 3px solid #6a8; margin: 1rem 0; }
+</style>
+</head>
+<body>
+<h1>This is what our math will look like</h1>
+<p class="note">If you can read the formulas below as clean typeset math, this is the format we should use for every project document from now on. If they look like code, tell me and MathJax failed to load (you may need to be online the first time you open it).</p>
+
+<hr>
+
+<h2>The optimal dispatch rule (from Part IV.3)</h2>
+<p>Let \(\mu\) be the marginal value of stored charge (the "water value"), \(P_t\) the price now, \(\eta_c,\eta_d\) the charge/discharge efficiencies, and \(c_{\text{deg}}\) the wear cost. The optimal policy is a price band:</p>
+
+<div class="box">
+\[
+\text{sell (discharge) if}\qquad P_t \;>\; \frac{\mu}{\eta_d} + c_{\text{deg}}
+\]
+\[
+\text{buy (charge) if}\qquad \mu \;>\; \frac{P_t + c_{\text{deg}}}{\eta_c}
+\]
+</div>
+
+<p>and between those two thresholds the optimal action is to do nothing. The width of that no-trade band is</p>
+\[
+W \;=\; \mu\left(\frac{1}{\eta_d} - \eta_c\right) + 2\,c_{\text{deg}} \;>\; 0 .
+\]
+
+<h2>The headline identity (from Part IV.11)</h2>
+<p>The marginal value of one more unit of battery capacity equals a sum of shadow prices:</p>
+<div class="box">
+\[
+\frac{\partial \mathcal{V}^\star}{\partial E^{\max}} \;=\; \sum_t \Big(\underbrace{\bar\lambda_t}_{\text{arbitrage room}} \;+\; \underbrace{\psi^{\text{dn}}_t}_{\text{down-reserve room}}\Big)
+\]
+</div>
+<p>Note what is <em>absent</em>: the upward-reserve multiplier \(\psi^{\text{up}}_t\). More capacity raises the ceiling, and a higher ceiling cannot relieve a floor — which is the entire subtlety we are working through.</p>
+
+<h2>The energy-headroom constraints (from Part III.17)</h2>
+\[
+\text{(EH-up)}\qquad S^+_t - S^{\min} \;\ge\; \frac{1}{\eta_d}\sum_{k\in\mathcal{K}^{\text{up}}} \tau_k\, u^k_t
+\]
+\[
+\text{(EH-dn)}\qquad E^{\max} - S^+_t \;\ge\; \eta_c\sum_{k\in\mathcal{K}^{\text{dn}}} \tau_k\, u^k_t
+\]
+<p class="note">\(\tau_k\) is the per-product duration requirement — the thing we still need to pin down from the ERCOT protocols, because it scales every one of these constraints.</p>
+
+</body>
+</html>

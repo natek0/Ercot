@@ -1,0 +1,19 @@
+# Secrets — never commit
+.env
+
+# Python environment
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Data (immutable raw pulls and local warehouse can be large)
+data/raw/
+data/*.duckdb
+
+# OS / editor
+.DS_Store
+.ipynb_checkpoints/
+
+# Claude Code local session dir
+.claude/

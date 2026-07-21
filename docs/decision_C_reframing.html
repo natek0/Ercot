@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Decision C — reframing the project around the SOC-coupling shadow price</title>
+<script>
+  window.MathJax = {
+    tex: { inlineMath: [['\\(', '\\)'], ['$', '$']], displayMath: [['\\[', '\\]'], ['$$', '$$']] },
+    svg: { fontCache: 'global' }
+  };
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" async></script>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    max-width: 48rem; margin: 3rem auto; padding: 0 1.25rem;
+    font: 17px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: #fbfbf9; color: #1a1a1a;
+  }
+  @media (prefers-color-scheme: dark) {
+    body { background: #16161a; color: #e6e6e6; }
+    hr { border-color: #333; } .note { color: #a8a8a8; }
+    .box { background: #1e1e24; } th { background: #22222a; }
+    code { background: #22222a; }
+  }
+  h1 { font-size: 1.55rem; line-height: 1.3; }
+  h2 { font-size: 1.2rem; margin-top: 2.4rem; border-bottom: 1px solid #ddd; padding-bottom: .3rem; }
+  h3 { font-size: 1.02rem; margin-top: 1.6rem; }
+  hr { border: none; border-top: 1px solid #ddd; margin: 2rem 0; }
+  .note { color: #666; font-size: 0.95rem; }
+  .box { padding: 0.6rem 1.1rem; border-left: 3px solid #6a8; margin: 1.1rem 0; background: #f3f5f2; border-radius: 3px; }
+  .warn { border-left-color: #c96; background: #faf5ee; }
+  @media (prefers-color-scheme: dark) { .warn { background: #29231b; } }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: 0.95rem; }
+  th, td { border: 1px solid #ccc; padding: 0.4rem 0.6rem; text-align: left; vertical-align: top; }
+  @media (prefers-color-scheme: dark) { th, td { border-color: #3a3a44; } }
+  th { background: #eee; }
+  code { background: #eee; padding: 0.05rem 0.3rem; border-radius: 3px; font-size: 0.9em; }
+  ol.mods > li { margin-bottom: 1rem; }
+</style>
+</head>
+<body>
+
+<h1>Decision C — reframe the project around the SOC-coupling shadow price</h1>
+<p class="note">Working document. Plain-language throughout; every formula is the same one already in the plan (section numbers cited). Goal being optimized for: a project that is <em>defensible under an interviewer who asks you to justify every choice</em> for the BASE quant internship. Last updated after confirming ERCOT product directions and the duration-column question against external sources (see References).</p>
+
+<h2>1. The one-sentence problem</h2>
+<p>The plan's headline pitch is <strong>"RTC+B forced batteries to hold enough charge to back their reserve sales, and my duration-value curve prices that coupling — so Q2 (the shadow price) and Q3 (the duration curve) are the same computation."</strong> That pitch has a hole: the reserve products that actually create the binding coupling point in the <em>opposite direction</em> from the one the duration curve can see.</p>
+
+<h2>2. The mechanism, in plain terms — up vs down, floor vs ceiling</h2>
+
+<p>A reserve is a promise to change output on command. There are two directions:</p>
+<ul>
+<li><strong>Upward</strong> reserve = "be ready to <em>push power out</em> (inject) fast." That needs <em>charge in the tank</em>, so it imposes a <strong>floor</strong>: keep at least so much stored. ERCOT's upward products: <strong>Reg-Up, RRS, ECRS, Non-Spin</strong>.</li>
+<li><strong>Downward</strong> reserve = "be ready to <em>soak power up</em> (charge) fast." That needs <em>empty space</em>, so it imposes a <strong>ceiling</strong>: keep at least so much room free. ERCOT's only downward product: <strong>Reg-Down</strong>.</li>
+</ul>
+
+<p>These are the plan's two energy-headroom constraints (section III.17). \(S^+_t\) is the charge you'll be holding after you act; \(\tau_k\) is product \(k\)'s duration requirement; \(u^k_t\) is how much of it you sold:</p>
+
+<div class="box">
+\[ \text{(EH-up)}\qquad \underbrace{S^+_t - S^{\min}}_{\text{charge above the floor}} \;\ge\; \frac{1}{\eta_d}\sum_{k\in\mathcal{K}^{\text{up}}} \tau_k\, u^k_t \qquad\text{shadow price } \psi^{\text{up}}_t \]
+\[ \text{(EH-dn)}\qquad \underbrace{E^{\max} - S^+_t}_{\text{room below the ceiling}} \;\ge\; \eta_c\sum_{k\in\mathcal{K}^{\text{dn}}} \tau_k\, u^k_t \qquad\text{shadow price } \psi^{\text{dn}}_t \]
+</div>
+
+<p>A <strong>shadow price</strong> is just "how many extra dollars I'd make if this rule were loosened by one unit." \(\psi^{\text{up}}\) measures the cost of the hold-charge floor; \(\psi^{\text{dn}}\) the cost of the keep-room ceiling.</p>
+
+<h3>Duration is a ceiling, so the duration curve can only see the ceiling side</h3>
+<p>"Duration" is tank size \(E^{\max}\). The plan's headline identity (section IV.11) is a mechanical consequence of the envelope theorem — the value of extra capacity equals the shadow prices of the constraints in which \(E^{\max}\) literally appears:</p>
+
+<div class="box">
+\[ \frac{\partial \mathcal{V}^\star}{\partial E^{\max}} \;=\; \sum_t \Big(\underbrace{\bar\lambda_t}_{\text{arbitrage room}} \;+\; \underbrace{\psi^{\text{dn}}_t}_{\text{down-reserve room}}\Big) \]
+</div>
+
+<p>\(E^{\max}\) appears in the plain capacity limit \(S_t \le E^{\max}\) (shadow price \(\bar\lambda_t\)) and in (EH-dn). It does <strong>not</strong> appear in (EH-up). So <strong>\(\psi^{\text{up}}\) is absent from the duration curve</strong> — and that's correct, not a bug: a bigger tank raises the <em>ceiling</em>, and a higher ceiling cannot relieve a <em>floor</em>. This is the plan's own equation; the plan's prose just forgets it in three places (section 5 below).</p>
+
+<h3>Why this is the crux</h3>
+<p>The whole plan is built on the idea that the coupling binds. But "does it bind?" splits into two questions with opposite likely answers:</p>
+<table>
+<tr><th>Question</th><th>Which products drive it</th><th>Likely to bind?</th><th>Feeds the duration curve?</th></tr>
+<tr><td>Does the <strong>floor</strong> bind? \((\psi^{\text{up}}&gt;0)\)</td><td>Reg-Up, RRS, ECRS, Non-Spin — the <em>big</em> markets</td><td><strong>Yes, plausibly often.</strong> Non-Spin's 4 h requirement genuinely constrains the mostly-short fleet.</td><td><strong>No</strong> — \(\psi^{\text{up}}\) is not in the identity.</td></tr>
+<tr><td>Does the <strong>ceiling</strong> bind? \((\psi^{\text{dn}}&gt;0)\)</td><td>Reg-Down only — a <em>small, cheap</em> market</td><td><strong>Rarely.</strong> A battery usually has empty room, and Reg-Down volumes/prices are low.</td><td><strong>Yes</strong> — it's the identity's only ancillary term.</td></tr>
+</table>
+
+<p>So a naive Step 0 that reads the mechanism off the duration curve could report "the ancillary contribution to duration value is ~0 → the mechanism is dead → re-scope," while the economically real coupling (\(\psi^{\text{up}}\), the up-reserve floor) is alive and simply unmeasured. <strong>That is the confusion we kept hitting.</strong></p>
+
+<h3>The subtlety that makes the plan's decomposition wrong</h3>
+<p>Up-reserve <em>does</em> affect duration value — but indirectly. To sell 4-hour Non-Spin, a short battery must be pushed toward full (it needs \(\tfrac{1}{\eta_d}\tau_k u^k\) of charge on hand), so its ceiling \(S_t\le E^{\max}\) binds. Extra capacity relieves that — and the benefit shows up in \(\bar\lambda\), the "arbitrage room" multiplier, <em>bundled together with genuine arbitrage value and impossible to separate by looking at the multipliers.</em> Therefore the plan's Q3 deliverable 4 ("decompose the duration curve into an arbitrage part and an ancillary part by splitting the multipliers") is not sound. The fix is a <strong>counterfactual</strong> decomposition — solve with and without each product set and difference the curves — which attributes value correctly no matter how it routes through the multipliers.</p>
+
+<h2>3. External confirmation of the market facts</h2>
+<table>
+<tr><th>Claim we rely on</th><th>Confirmed?</th><th>Source</th></tr>
+<tr><td>Down-reserve in ERCOT = Reg-Down and nothing else; RRS/ECRS/Non-Spin/Reg-Up are all upward</td><td>Yes</td><td>Modo AS explainer; NFM Consulting</td></tr>
+<tr><td>\(\tau_k\) = real-time qualification (sustain) duration; award MW = energy ÷ (power × \(\tau_k\))</td><td>Yes — 1 h battery ⇒ max 25% rated power to Non-Spin = \(1\text{ MWh}/4\text{ h}\)</td><td>Modo RTC+B/SOC; Gridmatic</td></tr>
+<tr><td>Post-RTC durations: ECRS 2 h→1 h, RRS &amp; Reg 1 h→0.5 h, Non-Spin stays 4 h; FFR = 0.25 h</td><td>Yes</td><td>Modo; ERCOT TAC report (FFR 15 min)</td></tr>
+<tr><td>Non-Spin (4 h, upward) is the product that most tightly binds short batteries</td><td>Yes — "particularly Non-Spin"</td><td>Modo; energy-storage.news</td></tr>
+<tr><td>SOC enforcement in SCED reduces AS-eligible capacity interval-to-interval</td><td>Yes</td><td>Modo; Gridmatic; energy-storage.news</td></tr>
+<tr><td>Reg-Down is a minor, low-priced product; AS revenue dominated by RRS/ECRS</td><td>Directionally yes (exact price series not yet pulled)</td><td>Modo revenue forecast</td></tr>
+</table>
+<p class="note">Nothing external contradicts the reframing. (RTC+B go-live was 5 December 2025 — well established; a stray "Dec 2026" search hit was stale pre-launch planning content and is disregarded.)</p>
+
+<h2>4. Option C, and why it is the right call for the interview goal</h2>
+<p><strong>Report both objects as distinct, and fix the decomposition.</strong> Concretely:</p>
+<ul>
+<li><strong>Headline A — the cost of SOC enforcement</strong>: the distribution of \(\psi^{\text{up}}_t\) on the big upward products (RRS, ECRS, Non-Spin). This is the number every ERCOT operator has been asking since December, it's RTC+B-specific, and it's the one most likely to actually bind.</li>
+<li><strong>Headline B — the duration-value curve</strong>: kept, but presented honestly as driven by arbitrage room \(\bar\lambda\) plus the <em>minor</em> down-reserve market \(\psi^{\text{dn}}\), with the up-reserve effect shown by <strong>counterfactual</strong> solves rather than a multiplier split.</li>
+<li><strong>The relationship stated precisely</strong>: Q2 and Q3 come from one solve and illuminate the <em>same</em> SOC coupling from its two sides — the floor (what it costs, \(\psi^{\text{up}}\)) and the ceiling (what capacity is worth, \(\bar\lambda+\psi^{\text{dn}}\)). Related, not identical.</li>
+</ul>
+
+<div class="box">
+<p><strong>Why C beats the alternatives, for your specific goal:</strong></p>
+<ul>
+<li><strong>vs. A (duration curve stays sole headline, add Reg-Down):</strong> the ancillary term stays tiny (Reg-Down is minor) <em>and</em> pulling Regulation into a deterministic LP reintroduces the "Regulation looks free" artifact your Decision 2 exists to avoid, which only the Step-4 stochastic model can fix. Weakest.</li>
+<li><strong>vs. B (make \(\psi^{\text{up}}\) the only headline):</strong> fine and defensible, but throws away the duration curve — which is the legible, visual, "curve not a point" deliverable that makes the project readable to a non-specialist. No reason to discard it.</li>
+<li><strong>C keeps every deliverable, corrects the one real error, and turns the up/down asymmetry into evidence of judgment.</strong> An ERCOT-literate interviewer <em>will</em> probe "your capacity derivative only has the downward multiplier — reconcile that with the coupling binding upward." Pre-empting that is the single highest-leverage thing in the project. C is you pre-empting it.</li>
+</ul>
+</div>
+
+<p><strong>Bonus: C makes your Decision 2 coherent instead of confusing.</strong> Under C, the contingency-only run isn't "the headline duration run" (which never made sense — it zeroes out \(\psi^{\text{dn}}\)); it's "the clean run for the up-reserve SOC cost \(\psi^{\text{up}}\)," which is Headline A. The all-products run is where the small \(\psi^{\text{dn}}\) / duration story lives. The two runs now have clear, separate jobs.</p>
+
+<h2>5. Modifications — recorded as CLAUDE.md decisions 11&ndash;16</h2>
+<p>Per this project's convention, plan modifications are recorded as numbered decisions in <code>CLAUDE.md</code> (the plan document itself is left unedited; the CLAUDE.md decisions win on conflict). These entries (Decisions 11&ndash;16) are now committed, each mapped to the plan section it modifies.</p>
+<ol class="mods">
+<li><strong>Part 0 Decision 2 &amp; §II.11 &amp; §IV.11 "Consequence 1":</strong> replace "Q2 and Q3 are the same computation" with the precise "same solve, two sides of the coupling (floor cost \(\psi^{\text{up}}\) vs. ceiling value \(\bar\lambda+\psi^{\text{dn}}\)); related, not identical."</li>
+<li><strong>§VI, Q3 deliverable 4:</strong> replace the multiplier-split decomposition with the counterfactual one (solve energy-only, energy+contingency, energy+all-products; difference the duration curves). State explicitly that up-reserve duration value routes through \(\bar\lambda\) and is not separable by multiplier inspection.</li>
+<li><strong>§VI, Q2:</strong> promote \(\psi^{\text{up}}\) (up-reserve SOC-enforcement cost) to a first-class headline result — "Headline A" — reported on RRS/ECRS/Non-Spin, by hour/season/scarcity regime.</li>
+<li><strong>Part XIV Step 0 &amp; §X:</strong> revise the diagnostics and gate — the viability signal is \(\psi^{\text{up}}\) binding on the contingency (upward) products, <em>not</em> the presence of an ancillary term in the duration curve. Add the energy-only-vs-energy+contingency counterfactual duration curves so the gate cannot misfire on the down side. (Details in the Step 0 spec, next document.)</li>
+<li><strong>§XI / Step 6 (ADER):</strong> flag the claim "a backup floor \(S^{\min}&gt;0\) raises \(\psi^{\text{up}}\) and by IV.11 raises the marginal value of duration" as a non-sequitur (IV.11 has no \(\psi^{\text{up}}\)); re-derive the true effect of \(S^{\min}\) on duration value before relying on it. Deferred to Step 6, but do not repeat the claim before it's fixed.</li>
+<li><strong>Config / §II.9 / Decision 9:</strong> record that \(\tau_k\) = the real-time qualification duration (Reg 0.5 h, RRS 0.5 h, ECRS 1 h, Non-Spin 4 h, FFR 0.25 h), confirmed by the 25%-Non-Spin worked example; keep \(\tau_k\) a config flag with the pre-RTC vector (ECRS 2 h, RRS 1 h, Reg 1 h) for the natural experiment.</li>
+</ol>
+
+<h2>6. What this does NOT change</h2>
+<p>The perfect-foresight LP, the water-value / dynamic-programming machinery, the CVaR risk chapter, the learned price model, the evaluation protocol, the build order, and all four Step-0 diagnostics survive intact. The corrections in your CLAUDE.md (dual signs, degradation on both legs, the concave-transition relaxation, the \(\Delta t\) units) are unaffected and still required. This is a reframing of the <em>headline narrative and one decomposition</em>, not a change to the engine.</p>
+
+<h2>References</h2>
+<ul class="note">
+<li>Modo Energy — RTC+B &amp; SOC duration management: modoenergy.com/research/en/rtcb-real-time-cooptimization-rtc-ercot-ancillary-service-duration-soc-management</li>
+<li>Modo Energy — ERCOT Ancillary Services explainer: modoenergy.com/research/ercot-ancillary-services-explainer</li>
+<li>NFM Consulting — ERCOT Nodal Ancillary Services: nfmconsulting.com/knowledge/ercot-nodal-ancillary-services/</li>
+<li>Gridmatic — Impact of ERCOT SOC guidelines on battery operations: gridmatic.com/blog/impact-of-new-ercot-state-of-charge-guidelines-on-battery-operations-and-net-revenue/</li>
+<li>energy-storage.news — Revised ERCOT state-of-charge rules</li>
+<li>ERCOT — RTC+B Battery Overview (July 2025 deck); TAC report (May 2025, FFR 15 min); NPRR1204 (SOC with RTC)</li>
+</ul>
+
+</body>
+</html>
