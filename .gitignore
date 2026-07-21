@@ -17,3 +17,6 @@ data/*.duckdb
 
 # Claude Code local session dir
 .claude/
+
+# Working-context / application-strategy file — keep local (public repo)
+CLAUDE.md
