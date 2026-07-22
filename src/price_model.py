@@ -36,13 +36,14 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import HistGradientBoostingRegressor
-from sklearn.isotonic import isotonic_regression
 from sklearn.mixture import GaussianMixture
 
 from src import features as F
 
-# Quantile grid. Denser in the tails, where the option value lives (§V.26).
-LEVELS = np.array([0.01, 0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95, 0.99])
+# Quantile grid. Denser in the tails, where the option value lives (§V.26); the
+# extreme 0.005/0.995 knots resolve the spike tail the DP holds charge against and
+# push the PIT-clamp boundary further out.
+LEVELS = np.array([0.005, 0.01, 0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95, 0.99, 0.995])
 
 
 # --------------------------------------------------------------------------- #
@@ -58,12 +59,20 @@ def pinball_loss(y: np.ndarray, q: np.ndarray, levels=LEVELS) -> float:
 
 def crps_from_quantiles(y: np.ndarray, q: np.ndarray, levels=LEVELS) -> np.ndarray:
     """Per-sample CRPS via the identity CRPS = 2 ∫_0^1 ρ_α(y - q_α) dα (§V.25),
-    trapezoid-integrated over the level grid. Returns (n,)."""
+    trapezoid-integrated over the FULL [0, 1] level range. Returns (n,).
+
+    The grid is padded with α=0 and α=1 (holding the extreme modelled quantiles flat),
+    so the tail slabs [0, levels[0]] and [levels[-1], 1] are integrated rather than
+    dropped — a truncated grid silently under-penalises under-dispersed tails, exactly
+    the heavy-tail regime this project scores in. At α=0, ρ_0(u)=(-u)^+; at α=1,
+    ρ_1(u)=u^+; both use the outermost modelled quantile as the endpoint value."""
     y = np.asarray(y, float)[:, None]
     q = np.asarray(q, float)
-    u = y - q
-    rho = np.maximum(levels * u, (levels - 1) * u)      # (n, L)
-    return 2.0 * np.trapezoid(rho, levels, axis=1)
+    ext_levels = np.concatenate(([0.0], levels, [1.0]))
+    ext_q = np.concatenate((q[:, :1], q, q[:, -1:]), axis=1)   # flat-extend the tails
+    u = y - ext_q
+    rho = np.maximum(ext_levels * u, (ext_levels - 1) * u)      # (n, L+2)
+    return 2.0 * np.trapezoid(rho, ext_levels, axis=1)
 
 
 def pit_values(y: np.ndarray, q: np.ndarray, levels=LEVELS) -> np.ndarray:
@@ -79,10 +88,12 @@ def pit_values(y: np.ndarray, q: np.ndarray, levels=LEVELS) -> np.ndarray:
 
 
 def rearrange(q: np.ndarray, levels=LEVELS) -> np.ndarray:
-    """Isotonic rearrangement in α at each row: the monotone reordering of the fitted
-    quantiles. Guaranteed not to increase pinball loss (§V.24). q is (n, n_levels)."""
-    q = np.asarray(q, float)
-    return np.array([isotonic_regression(row) for row in q])
+    """Monotone rearrangement in α at each row: SORT the fitted quantiles ascending.
+    This is precisely the rearrangement operator of Chernozhukov–Fernández-Val–Galichon
+    whose theorem guarantees the pinball loss does not increase (§V.24) — an earlier
+    version used isotonic (PAVA) L2 projection, which is monotone but is a different
+    operator the theorem does not cover (and is weakly dominated by the sort)."""
+    return np.sort(np.asarray(q, float), axis=1)
 
 
 # --------------------------------------------------------------------------- #
@@ -146,7 +157,8 @@ class EmpiricalCond:
         r = df["resid"].to_numpy(float)
         r_prev = df["resid_lag_15min"].to_numpy(float)
         hour = df["hour_of_day"].to_numpy(int)
-        # log-spaced-in-tail edges via empirical quantiles (mirrors markov.bin_edges)
+        # equal-probability (empirical-quantile) edges on the previous residual; this
+        # is the plain baseline binning, NOT the tail-refined markov.bin_edges
         qs = np.linspace(0, 1, self.n_bins + 1)
         self.edges = np.quantile(r_prev, qs)
         self.edges[0], self.edges[-1] = -np.inf, np.inf

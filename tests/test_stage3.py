@@ -150,6 +150,24 @@ def test_features_are_point_in_time(synth_feat):
         assert np.allclose(np.nan_to_num(a), np.nan_to_num(b), atol=1e-9)
 
 
+def test_residual_conditioning_features_are_point_in_time():
+    """The RESIDUAL-derived conditioning columns (resid_lag_15min, resid_roll_mean_1d,
+    scarcity_recent) — where a leak would most plausibly hide, since they depend on a
+    fitted seasonal — must also be pure functions of the past. Reconstruct each from a
+    truncated prefix under a FIXED seasonal and assert equality (closes the gap the model
+    -risk reviewer flagged: assert_pit_adapted is only a static invariant)."""
+    panel = _synth_panel()
+    full_feat = F.build_features(panel)
+    seasonal = F.fit_seasonal(full_feat)               # fixed across truncations
+    full_fr = F.add_residual_features(full_feat, seasonal)
+    resid_cond = ["resid_lag_15min", "resid_roll_mean_1d", "scarcity_recent"]
+    for n in (700, 3000, 8000):
+        tr_fr = F.add_residual_features(F.build_features(panel.iloc[: n + 1]), seasonal)
+        a = full_fr.iloc[n][resid_cond].to_numpy(float)
+        b = tr_fr.iloc[n][resid_cond].to_numpy(float)
+        assert np.allclose(np.nan_to_num(a), np.nan_to_num(b), atol=1e-9)
+
+
 # --------------------------------------------------------------------------- #
 # Models fit + predict on synthetic; learned beats the baselines out of sample #
 # --------------------------------------------------------------------------- #
@@ -195,10 +213,12 @@ def test_transition_matrices_valid(synth_feat):
     ht = markov.transition_counts(fr, edges)
     chk = ht.check()
     assert chk["max_rowsum_err"] < 1e-9                # every row sums to one (step 5)
-    assert chk["irreducible"]                          # chain irreducible (assumption A2)
+    assert chk["irreducible"]                          # MATRIX irreducible -> DP well-posed (A2)
+    assert chk["counts_irreducible"] in (True, False)  # honest raw-count diagnostic present
     gbt = QuantileGBT(max_iter=40).fit(F.conditioning_matrix(fr), fr["resid"].to_numpy(float))
     ht_l = markov.transition_model(gbt, fr, edges)
     assert ht_l.check()["max_rowsum_err"] < 1e-9
+    assert ht_l.check()["counts_irreducible"] is None  # model matrix has no raw counts
 
 
 # --------------------------------------------------------------------------- #
@@ -262,6 +282,27 @@ def test_features_match_warehouse():
         assert (np.isnan(a) == np.isnan(b)).all()      # NaN in the same gap rows
     for col in ("is_scarcity", "quarter_of_day", "dow", "is_weekend", "month"):
         assert (m[col + "_f"].to_numpy() == m[col + "_w"].to_numpy()).all()
+
+
+@has_cache
+def test_learned_forecaster_is_causal_on_real_data():
+    """The causality guarantee, exercised on the REAL panel (the suite otherwise tests
+    it only on synthetic data, which is all CI sees). Scramble the real future and assert
+    a forecast made now is byte-identical — the model-risk reviewer verified this by hand;
+    this pins it in the suite."""
+    from src import ingest
+    from src.forecast import LearnedForecaster
+    panel = ingest.build_panel("2025-12-05", "2026-06-20")
+    prices = panel["price"].to_numpy(float)
+    ts = panel["ts"].to_numpy()
+    n = 130 * 96                                        # deep enough that the model engaged
+    lf1 = LearnedForecaster(ts, prices, min_train_months=2)
+    p2 = prices.copy()
+    p2[n:] = 5000.0                                     # scramble everything from t=n on
+    lf2 = LearnedForecaster(ts, p2, min_train_months=2)
+    f1 = lf1.predict(prices[:n], 96)
+    f2 = lf2.predict(p2[:n], 96)
+    assert np.array_equal(f1, f2)
 
 
 @has_cache

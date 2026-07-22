@@ -68,11 +68,17 @@ def assert_no_fold_leak(train_idx, eval_idx, ts) -> None:
         "fold leak: a train timestamp is >= an eval timestamp (not expanding-window)")
 
 
-def assert_pit_adapted(feat_resid_eval: pd.DataFrame) -> None:
-    """(§VIII.1) No conditioning column references the eval row's own current price.
-    Structural check: the conditioning set is exactly src/features.CONDITIONING, which
-    excludes price, price_z_1d and is_scarcity (the current-price columns); assert that
-    invariant here so a future edit that sneaks a current-price feature in trips a test."""
+def assert_pit_adapted(feat_resid_eval: pd.DataFrame = None) -> None:
+    """(§VIII.1) STATIC invariant on the CONDITIONING constant — NOT a per-row data check.
+
+    It asserts only that no *named* current-price column (price, its z-score/scarcity
+    flag, resid, seasonal) has been added to src/features.CONDITIONING. That catches the
+    common regression (someone lists a current-price feature) but by construction cannot
+    catch a mis-COMPUTED causal feature (e.g. a lag that forgot its shift). The genuine
+    data-level adaptedness guarantees live in the tests: `test_features_are_point_in_time`
+    (reconstructs every conditioning column from a truncated prefix) and
+    `test_learned_forecaster_is_causal*` (perturbs the future, asserts the forecast is
+    invariant). The `feat_resid_eval` arg is accepted for call-site symmetry but unused."""
     current_price_cols = {"price", "price_z_1d", "is_scarcity", "resid", "seasonal"}
     leaked = current_price_cols & set(F.CONDITIONING)
     assert not leaked, f"adaptedness violation: current-price feature(s) in CONDITIONING: {leaked}"

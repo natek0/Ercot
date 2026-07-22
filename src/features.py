@@ -132,31 +132,63 @@ CONDITIONING = [
 # --------------------------------------------------------------------------- #
 @dataclass
 class SeasonalMean:
-    """Deseasonaliser m(quarter_of_day, is_weekend). Robust (median) so a single
-    spike day does not distort the profile. FIT ON TRAINING ROWS ONLY — a global
-    fit before the walk-forward loop leaks the future (§VIII.3). Evaluated at any
-    calendar cell, including future intervals (calendar is known in advance)."""
+    """Deseasonaliser m(quarter_of_day, is_weekend, month), per plan §V.26 step 1 /
+    §V.24 m(h, daytype, month). Robust (median) so a single spike day does not distort
+    the profile. FIT ON TRAINING ROWS ONLY — a global fit before the walk-forward loop
+    leaks the future (§VIII.3).
 
-    table: dict           # (quarter_of_day, is_weekend) -> median price
+    THE MONTH TERM AND WHY IT IS A *LEVEL EXTRAPOLATION*, NOT A groupby(month). The
+    obvious implementation — grouping on month alongside qod/weekend — silently makes
+    things WORSE under expanding-window folds: the evaluation month is by construction
+    never in the training slice, so every eval cell misses and falls back to the global
+    median, discarding the intra-day shape. Instead the model is separable:
+
+        m(qod, weekend, month) = shape(qod, weekend)  +  level(month)
+
+    where `shape` is the (month-detrended) intra-day/weekend profile and `level(month)`
+    is a per-month price level. For an unseen future month, `level` is EXTRAPOLATED as
+    the most recent training month's level (persistence) — so the residual it produces
+    stays centred instead of drifting up over the warming season (which was mischaracter-
+    ised as under-dispersion before this fix). Verified a strict improvement in held-out
+    CRPS and PIT-KS over the month-free variant."""
+
+    shape: dict           # (quarter_of_day, is_weekend) -> intra-day/weekend offset
+    month_level: dict     # month (1..12) -> price level, TRAINING months only
+    persist_level: float  # most recent training month's level (unseen-month fallback)
     global_median: float
 
-    def eval_cal(self, quarter_of_day: np.ndarray, is_weekend: np.ndarray) -> np.ndarray:
+    def _level(self, month: int) -> float:
+        return self.month_level.get(int(month), self.persist_level)
+
+    def eval_cal(self, quarter_of_day, is_weekend, month) -> np.ndarray:
         q = np.asarray(quarter_of_day, int)
         w = np.asarray(is_weekend, int)
-        out = np.array([self.table.get((qi, wi), self.global_median)
-                        for qi, wi in zip(q, w)], float)
-        return out
+        mo = np.asarray(month, int)
+        return np.array([self.shape.get((qi, wi), 0.0) + self._level(mi)
+                         for qi, wi, mi in zip(q, w, mo)], float)
 
     def eval_ts(self, ts) -> np.ndarray:
         cal = calendar_frame(pd.Series(pd.to_datetime(ts)))
-        return self.eval_cal(cal["quarter_of_day"].to_numpy(), cal["is_weekend"].to_numpy())
+        return self.eval_cal(cal["quarter_of_day"].to_numpy(),
+                             cal["is_weekend"].to_numpy(), cal["month"].to_numpy())
 
 
 def fit_seasonal(feat_train: pd.DataFrame) -> SeasonalMean:
-    """Fit m on a TRAINING slice of build_features() output."""
-    g = feat_train.groupby(["quarter_of_day", "is_weekend"])["price"].median()
-    table = {(int(q), int(w)): float(v) for (q, w), v in g.items()}
-    return SeasonalMean(table=table, global_median=float(feat_train["price"].median()))
+    """Fit m on a TRAINING slice of build_features() output. Separable month level +
+    intra-day shape (see SeasonalMean); the unseen-month fallback is the latest training
+    month's level, found by timestamp (correct across the Dec→Jan year boundary)."""
+    df = feat_train
+    ml = df.groupby("month")["price"].median()
+    month_level = {int(m): float(v) for m, v in ml.items()}
+    latest_month = int(df.sort_values("ts")["month"].iloc[-1])   # newest by calendar
+    gmed = float(df["price"].median())
+    persist_level = month_level.get(latest_month, gmed)
+    # intra-day/weekend shape on the MONTH-DETRENDED price
+    detrended = df["price"] - df["month"].map(month_level)
+    g = detrended.groupby([df["quarter_of_day"], df["is_weekend"]]).median()
+    shape = {(int(q), int(w)): float(v) for (q, w), v in g.items()}
+    return SeasonalMean(shape=shape, month_level=month_level,
+                        persist_level=float(persist_level), global_median=gmed)
 
 
 # --------------------------------------------------------------------------- #
@@ -171,13 +203,17 @@ def add_residual_features(feat: pd.DataFrame, seasonal: SeasonalMean) -> pd.Data
     scarcity_recent = 1{price_{t-1} > 100}           (conditioning: strictly past)
     """
     out = feat.copy()
-    m_now = seasonal.eval_cal(out["quarter_of_day"].to_numpy(), out["is_weekend"].to_numpy())
+    m_now = seasonal.eval_cal(out["quarter_of_day"].to_numpy(),
+                              out["is_weekend"].to_numpy(), out["month"].to_numpy())
     out["seasonal"] = m_now
     out["resid"] = out["price"].to_numpy() - m_now
-    resid_prev = out["resid"].shift(1)
-    out["resid_lag_15min"] = resid_prev
+    # resid_lag_15min is built from the GAP-SAFE price lag (not a row shift): it is
+    # price_{t-1} - m(t-1), and is NaN exactly where price_lag_15min is NaN (a data
+    # gap), so cross-gap pairs never enter the AR/jump fit or the transition counts.
+    m_prev = seasonal.eval_ts((out["ts"] - np.timedelta64(15, "m")).to_numpy())
+    out["resid_lag_15min"] = out["price_lag_15min"].to_numpy() - m_prev
     out["resid_roll_mean_1d"] = out["resid"].shift(1).rolling(DAY, min_periods=1).mean()
-    out["scarcity_recent"] = (out["price"].shift(1) > SCARCITY_LEVEL).astype(float)
+    out["scarcity_recent"] = (out["price_lag_15min"] > SCARCITY_LEVEL).astype(float)
     return out
 
 

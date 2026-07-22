@@ -1,45 +1,57 @@
 window 2025-12-05..2026-06-20  T=18885 intervals  198 days
 
 === (A) walk-forward price-model scoring (held-out, expanding window) ===
-  fold 0 train<= 2026-01-31  n_eval=2688  best=jump (CRPS 2.030)
-  fold 1 train<= 2026-02-28  n_eval=2949  best=learned_gbt (CRPS 2.847)
-  fold 2 train<= 2026-03-31  n_eval=2880  best=learned_gbt (CRPS 4.515)
-  fold 3 train<= 2026-04-30  n_eval=2627  best=learned_gbt (CRPS 1.869)
+  fold 0 train<= 2026-01-31  n_eval=2688  best=jump (CRPS 2.051)
+  fold 1 train<= 2026-02-28  n_eval=2949  best=learned_gbt (CRPS 2.857)
+  fold 2 train<= 2026-03-31  n_eval=2880  best=learned_gbt (CRPS 4.539)
+  fold 3 train<= 2026-04-30  n_eval=2627  best=learned_gbt (CRPS 1.866)
   fold 4 train<= 2026-05-31  n_eval=1916  best=learned_gbt (CRPS 1.833)
 
   pooled over 5 folds (13060 eval intervals):
   model              CRPS  pinball   PIT-KS   (lower CRPS/pinball better)
-  learned_gbt       2.708    0.978    0.031
-  jump              2.903    1.253    0.051
-  empirical         5.192    1.960    0.070
+  learned_gbt       2.718    0.835    0.024
+  jump              2.928    1.138    0.051
+  empirical         5.253    1.691    0.052
 
-  winner on held-out CRPS: learned_gbt. Learned beats BOTH baselines: True (ADOPT learned (§V.26)).
+  winner on held-out CRPS: learned_gbt. Learned beats BOTH baselines: True.
+  §V.26 adoption gate is TWO-pronged (CRPS win AND better realised capture rate).
+  -> PROVISIONALLY adopt learned on the CRPS prong; the capture-rate prong is
+     evaluated in Stage 4 (it needs a policy run on the transition kernel).
 
-  learned-model PIT histogram (flat => calibrated; KS=0.031 vs Uniform):
-    [0.0,0.1)  ######################################## 1705
-    [0.1,0.2)  ########################## 1094
-    [0.2,0.3)  ############################### 1328
-    [0.3,0.4)  ########################### 1172
-    [0.4,0.5)  ############################## 1290
-    [0.5,0.6)  ################################ 1376
-    [0.6,0.7)  ############################ 1190
-    [0.7,0.8)  ################################ 1365
-    [0.8,0.9)  ######################## 1015
-    [0.9,1.0)  #################################### 1525
-    read: under-dispersed (U-shape: too confident, tails too often)
+  empirical baseline vs bin count (steelman — learned is unaffected by n_bins):
+    empirical n_bins=8   CRPS  5.864  <- best
+    empirical n_bins=12  CRPS  5.253  <- best
+    empirical n_bins=16  CRPS  4.703  <- best
+    empirical n_bins=24  CRPS  4.919
+    learned CRPS 2.718 still beats the empirical baseline at its best bin count (4.703).
 
-  hour-indexed transition matrices (last fold): empirical rowsum_err=3.3e-16 irreducible=True; learned rowsum_err=4.4e-16 irreducible=True
+  learned-model PIT histogram (flat => calibrated; KS=0.024 vs Uniform):
+    [0.0,0.1)  ####################################### 1576
+    [0.1,0.2)  ########################### 1083
+    [0.2,0.3)  ################################ 1310
+    [0.3,0.4)  ############################## 1203
+    [0.4,0.5)  ################################ 1296
+    [0.5,0.6)  ################################## 1387
+    [0.6,0.7)  ############################## 1225
+    [0.7,0.8)  ################################# 1329
+    [0.8,0.9)  ######################### 1030
+    [0.9,1.0)  ######################################## 1621
+    end-bin tail excess vs flat: +22%  (residual mild under-dispersion after the month-level deseasonaliser; direction + fix characterised in reports/stage3_notes.md)
+
+  hour-indexed transition matrices (last fold):
+    empirical: rowsum_err=6.7e-16  matrix-irreducible=True  raw-count-irreducible=False
+    learned:   rowsum_err=3.3e-16  matrix-irreducible=True
 
 === (B) value-of-foresight ladder with the LEARNED forecast @ 2h (energy-only, full window) ===
   ceiling (clairvoyant LP):        $    13,206
   MPC, perfect forecast:           $    12,847  (97% of ceiling)
-  MPC, LEARNED forecast:           $      -314
+  MPC, LEARNED forecast:           $      -303
   MPC, same-hour-last-week (naive):$    -3,453
   naive threshold floor:           $    -5,267
 
   forecast-error cost, naive  (ceiling-clair excluded): $    16,300
-  forecast-error cost, learned:                         $    13,161
-  >>> learned recovers $3,139 of the forecast-error gap (19% of it) — MPC profit $-3,453 -> $-314
+  forecast-error cost, learned:                         $    13,150
+  >>> learned recovers $3,150 of the forecast-error gap (19% of it) — MPC profit $-3,453 -> $-303
 
   Note: the learned forecaster falls back to seasonal-naive for the first 2 months (warm-up), so it and the naive MPC differ only on months 3-6; the full-window difference is therefore a conservative read of the learned model's value.
   The certainty-equivalent MPC consumes only the learned MEDIAN. The learned DISTRIBUTION's tail — its true prize — is realised by the Stage 4 DP, not here.

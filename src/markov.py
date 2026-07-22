@@ -49,14 +49,25 @@ class HourlyTransition:
         return np.clip(np.digitize(resid, self.edges[1:-1]), 0, self.n_bins - 1)
 
     def check(self, tol: float = 1e-9) -> dict:
-        """Row-sum-to-one and irreducibility (§V.26 step 5). Irreducibility is
-        checked per hour on the SUPPORT graph: from bin b you can reach b' if the
-        row has positive mass; the chain is irreducible if that directed graph is
-        strongly connected. Returns a dict of residuals/flags a test asserts on."""
+        """Row-sum-to-one and irreducibility (§V.26 step 5), reported as TWO things:
+
+          `irreducible`        — strong connectivity of the actual MATRIX support
+                                 (rows with mass > tol). This is the property the DP
+                                 needs; the small smoothing prior guarantees it.
+          `counts_irreducible` — strong connectivity of the UNSMOOTHED count support
+                                 (empirical matrix only; None for the model matrix). This
+                                 is the honest statement about the *observed process* —
+                                 if it is False, the smoothing prior is doing load-bearing
+                                 work and the DP result on thin hours should be read with
+                                 that in mind. Reporting both avoids the trap where a
+                                 smoothing prior makes `irreducible` vacuously true."""
         row_sums = self.matrices.sum(axis=2)
         max_rowsum_err = float(np.max(np.abs(row_sums - 1.0)))
-        irreducible = all(_strongly_connected(self.matrices[h] > tol) for h in range(24))
-        return {"max_rowsum_err": max_rowsum_err, "irreducible": bool(irreducible)}
+        matrix_irr = all(_strongly_connected(self.matrices[h] > tol) for h in range(24))
+        counts_irr = (all(_strongly_connected(self.counts[h] > 0) for h in range(24))
+                      if self.counts is not None else None)
+        return {"max_rowsum_err": max_rowsum_err, "irreducible": bool(matrix_irr),
+                "counts_irreducible": counts_irr}
 
 
 def bin_edges(resid_train: np.ndarray, n_bins: int = 12, tail_from: float = 0.95) -> np.ndarray:
@@ -91,9 +102,16 @@ def _bin_centers(resid_train: np.ndarray, edges: np.ndarray) -> np.ndarray:
 
 
 def transition_counts(feat_resid: pd.DataFrame, edges: np.ndarray,
-                      smoothing: float = 1.0) -> HourlyTransition:
-    """Empirical count-based hour-indexed matrix (the §V.26 baseline). Laplace
-    smoothing keeps every row positive so the chain stays irreducible on thin hours."""
+                      smoothing: float = 0.01) -> HourlyTransition:
+    """Empirical count-based hour-indexed matrix (the §V.26 baseline).
+
+    A SMALL Laplace prior (default 0.01, i.e. ≈0.01·n_bins ≈ 0.1 pseudo-count per row
+    vs hundreds of real counts) keeps the *matrix* strictly positive so the chain the
+    DP consumes is irreducible — but is negligible for the CRPS/capture comparison.
+    This replaces an earlier prior of 1.0, which put ~20% of a typical row's mass into
+    the uniform prior (handicapping the baseline) AND made the irreducibility check
+    vacuous. `check()` reads irreducibility off the UNSMOOTHED counts, so it remains a
+    genuine statement about the observed process regardless of the prior."""
     df = feat_resid.dropna(subset=["resid", "resid_lag_15min"])
     n_bins = len(edges) - 1
     b_now = np.clip(np.digitize(df["resid"].to_numpy(float), edges[1:-1]), 0, n_bins - 1)
