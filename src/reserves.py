@@ -95,11 +95,13 @@ def build_reserve_tables(rp: np.ndarray, params, E_max: float, rho: float,
     """Precompute value[h,E,P] and psi[h,E,P] tables (A2/B2/C1) on a coarse (E,P) grid.
     Returns (value, psi, E_grid, P_grid). The DP interpolates these at (S⁺, power budget)."""
     tau = np.array([params.tau[k] for k in products])
-    E_grid = np.linspace(0.0, E_max, n_E)
+    # refine near E=0 where ψ_up is largest and changes fastest (else the E=0→0.1 jump
+    # smooths the tail — the second understatement source the review flagged)
+    E_grid = np.unique(np.concatenate([np.linspace(0.0, 0.3, 10), np.linspace(0.0, E_max, n_E)]))
     # power budget ranges over [0, p̄ + p̄] (charging frees extra up-headroom); coarse grid
     P_grid = np.linspace(0.0, 2.0 * params.p_bar, 5)
-    val = np.zeros((24, n_E, len(P_grid)))
-    psi = np.zeros((24, n_E, len(P_grid)))
+    val = np.zeros((24, len(E_grid), len(P_grid)))
+    psi = np.zeros((24, len(E_grid), len(P_grid)))
     for h in range(24):
         val[h], psi[h] = reserve_value_arrays(
             rp[h], tau, rho, params.c_deg, params.dt, params.eta_d,

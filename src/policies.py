@@ -251,8 +251,11 @@ class WalkForwardDPPolicy(Policy):
             ht = markov.transition_model(gbt, tr, edges)
         else:
             ht = markov.transition_counts(tr, edges)
-        rep_month = int(self._feat.iloc[train].sort_values("ts")["month"].iloc[-1])
-        prof = seasonal.eval_cal(np.arange(96), np.zeros(96, int), np.full(96, rep_month))
+        # POOLED diurnal profile (median training price by quarter-of-day over ALL days),
+        # not a representative-weekday/rep-month one — this matches what execution averages
+        # over (arbitrage is spike-driven, so the seasonal level is second-order anyway).
+        prof = (self._feat.iloc[train].groupby("quarter_of_day")["price"].median()
+                .reindex(range(96)).ffill().bfill().to_numpy())
         rtabs = None
         if self.reserves:
             rp = reserves.hour_reserve_prices(self.panel.iloc[train])
@@ -273,7 +276,11 @@ class WalkForwardDPPolicy(Policy):
         m_prev = seasonal.eval_ts([self.ts.iloc[t - 1]])[0]
         b = int(np.clip(np.digitize(self._prices[t - 1] - m_prev, edges[1:-1]), 0, N_b - 1))
         hour = h * 24 // H
-        EK = V[(h + 1) % H] @ K[hour][b]
+        # b is the LAST-OBSERVED bin (t-1); the current bin is uncertain, distributed
+        # K[hour][b]. Propagate one extra kernel step so we don't treat a stale spike bin
+        # as still-current (the over-persistence the review flagged): EK = V @ (K[b] @ K).
+        w = K[hour][b]
+        EK = V[(h + 1) % H] @ (w @ K[hour])
         psi = 0.0
         if rpsi is not None:
             j = int(min(max(round(soc / (self.E_max / self.N_S)), 0), self.N_S))

@@ -101,6 +101,31 @@ def _synth_panel_for_dp(n_days=40, start="2026-01-01", seed=0):
     return pd.DataFrame({"ts": ts, "price": price})
 
 
+def test_walkforward_dp_policy_is_causal():
+    """Pin the leak-free property on the REFIT path (WalkForwardDPPolicy), not just the
+    fixed-V DPPolicy — the kernel/seasonal/reserve refit per fold must not see the future."""
+    from src import ingest
+    from src.backtest import run_backtest
+    from src.policies import WalkForwardDPPolicy
+    import os
+    if not os.path.exists("data/raw/energy_HB_NORTH_2025-12-05_2026-06-20.parquet"):
+        import pytest
+        pytest.skip("no cached ERCOT panel")
+    panel = ingest.build_panel("2025-12-05", "2026-04-05")
+    prices = panel["price"].to_numpy(float)
+    ts = panel["ts"].to_numpy()
+    params = BatteryParams()
+    n = 70 * 96
+    r1 = run_backtest(prices, WalkForwardDPPolicy(panel, params, 2.0, N_S=100),
+                      params, 2.0, timestamps=ts)
+    p2 = prices.copy()
+    p2[n:] = 9999.0
+    r2 = run_backtest(p2, WalkForwardDPPolicy(panel.assign(price=p2), params, 2.0, N_S=100),
+                      params, 2.0, timestamps=ts)
+    assert np.allclose(r1.log.iloc[:n][["c", "d"]].to_numpy(),
+                       r2.log.iloc[:n][["c", "d"]].to_numpy())
+
+
 def test_reserve_psi_equals_finite_difference():
     """C1 gate (§IV.11-style): the reserve LP's ψ_up (dual on the energy/EH-up constraint)
     equals the finite-difference of the reserve value w.r.t. the backing-charge budget."""
