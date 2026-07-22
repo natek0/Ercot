@@ -5,6 +5,18 @@ Regenerate every number below with `python -m src.step0_run` (reads cached raw
 data under `data/raw/`). Read with `docs/step0_spec.md` (the contract) and
 `reports/step0_preregistration.md` (the frozen parameters). Math is plain ASCII.
 
+> **Changelog (Stage 1, Option A).** Numbers regenerated on the **deduped**
+> panel: the source pull contained **6 exact-duplicate 15-minute intervals**
+> (identical prices, an API page-boundary artifact), now dropped by
+> `ingest.dedup_panel` (default). This is a data-hygiene fix, not a parameter
+> change, so it is consistent with the frozen pre-registration (which freezes the
+> modelling parameters, not the raw pull). Effect: T 18,891 → **18,885**; the
+> headline contingency-2 h binding fraction 7.98% → **8.00%**; psi_up max
+> **$32.75 unchanged**; **verdict unchanged**. The only non-trivial move is the
+> `all-products` psi_up max (a degenerate Regulation-artifact run, never a
+> headline — Decision 2). Pre-dedup numbers reproduce with
+> `build_panel(..., dedup=False)`.
+
 ---
 
 ## 1. What was tested
@@ -23,7 +35,7 @@ constraints. The valuable output is not profit but the **dual** on (EH-up),
 ## 2. Setup (all frozen pre-registration, spec §4 / prereg)
 
 - **Settlement point:** HB_NORTH (a trading hub — AS clears systemwide, Decision 6).
-- **Window:** 2025-12-05 → 2026-06-20. **T = 18,891** 15-minute intervals over
+- **Window:** 2025-12-05 → 2026-06-20. **T = 18,885** 15-minute intervals over
   **198 days** (full post-launch window per Decision 1; summer Jul–Sep not yet in
   the data — see §7).
 - **Data:** energy price NP6-905-CD (query API); RT MCPC via NP6-796-ER yearly
@@ -43,12 +55,12 @@ over all. `min(c,d)` and `complSlack` are verification checks (§6); both are
 
 | run | E (h) | EH-up (c) | days | psiMean $ | psiMax $ | min(c,d) | complSlack |
 |---|---|---|---|---|---|---|---|
-| contingency | 1 | 8.45% | 130 | 0.955 | 59.00 | 0 | 0 |
-| **contingency** | **2** | **7.98%** | **129** | **0.814** | **32.75** | 0 | 0 |
-| contingency | 4 | 7.66% | 127 | 0.754 | 21.13 | 0 | 0 |
-| all-products | 1 | 39.80% | 185 | 0.764 | 254.70 | 0 | 0 |
-| all-products | 2 | 9.99% | 146 | 0.882 | 203.92 | 0 | 0 |
-| all-products | 4 | 8.15% | 131 | 0.875 | 220.87 | 0 | 0 |
+| contingency | 1 | 8.46% | 130 | 0.955 | 59.00 | 0 | 0 |
+| **contingency** | **2** | **8.00%** | **129** | **0.813** | **32.75** | 0 | 0 |
+| contingency | 4 | 7.67% | 127 | 0.753 | 21.13 | 0 | 0 |
+| all-products | 1 | 39.80% | 185 | 0.765 | 254.70 | 0 | 0 |
+| all-products | 2 | 9.92% | 144 | 0.888 | 159.64 | 0 | 0 |
+| all-products | 4 | 8.19% | 133 | 0.871 | 118.37 | 0 | 0 |
 
 The **contingency-only, 2 h** row is the gate cell (spec §6). The
 **all-products, 1 h** cell showing 39.8% is the Regulation artifact predicted by
@@ -63,7 +75,7 @@ Binding *frequency* is not the story; binding *magnitude* is. Distribution of
 
 | p50 | p90 | p95 | p99 | max |
 |---|---|---|---|---|
-| 0.015 | 0.204 | 0.597 | 1.469 | 32.75 |
+| 0.015 | 0.204 | 0.597 | 1.465 | 32.75 |
 
 The pre-registered tolerance ($0.228) is **too loose** — it counts sub-$0.25
 noise-level bindings. Tighten to an economically meaningful bar and the count
@@ -71,8 +83,8 @@ collapses:
 
 | threshold $/MWh | % of intervals | distinct days |
 |---|---|---|
-| 0.228 (pre-registered) | 7.98% | 129 |
-| 1 | 1.10% | 44 |
+| 0.228 (pre-registered) | 8.00% | 129 |
+| 1 | 1.09% | 44 |
 | **5 (materially significant)** | **0.08%** | **5** |
 | 10 | 0.03% | 4 |
 | 20 | 0.00% | 0 |
@@ -96,7 +108,7 @@ The five days with `psi_up > $5` (contingency, 2 h):
 | 2026-03-23 | 12.2 | 950 | 6 |
 | 2026-03-24 | 11.0 | 149 | 3 |
 | 2026-04-27 | 15.6 | 855 | 2 |
-| 2026-05-26 | 7.7 | 224 | 1 |
+| 2026-05-26 | 9.4 | 224 | 1 |
 | 2026-06-06 | 17.5 | 219 | 3 |
 
 The two largest-frequency days (Mar 23, Apr 27) are unambiguous scarcity events
@@ -115,7 +127,7 @@ when holding charge for reserves forces the battery to forgo a large arbitrage.
 - **Duration identity (check 4, contingency 2 h):** perturb E_max by ±1%,
   re-solve; the LEFT and RIGHT finite differences of the optimum bracket the
   multiplier sum `sum_t(lambda_bar + psi_dn)` (psi_dn ≡ 0 here):
-  fd_left = 4649.31, **sum = 4635.99**, fd_right = 4609.73. The multiplier sum
+  fd_left = 4649.22, **sum = 4635.91**, fd_right = 4609.65. The multiplier sum
   sits between the one-sided differences, as expected for a kinked, degenerate LP
   (Decision: compute one-sided, never central). This validates the dual
   extraction that Q2 and Q3 depend on.
@@ -129,7 +141,7 @@ when holding charge for reserves forces the battery to forgo a large arbitrage.
 2. **Summer is unobserved.** `psi_up` is a scarcity price, and ERCOT scarcity is
    overwhelmingly a July–September phenomenon; the window ends June 20. The
    monthly `psi_up > $1` interval counts are noisy and event-driven, NOT a clean
-   seasonal ramp: Dec 21, Jan 58, Feb 18, Mar 50, Apr 86, May 21, Jun 56. April
+   seasonal ramp: Dec 21, Jan 58, Feb 18, Mar 49, Apr 86, May 20, Jun 56. April
    is the peak in-sample. But the peak scarcity season is structurally the one we
    have not seen, and by construction summer can only RAISE `psi_up`. Decision B2:
    build now, top up with summer 2026 data as a scheduled refinement (not a
@@ -146,12 +158,12 @@ split — is the correct decomposition.
 
 | E (h) | energy-only | +contingency | +all-products |
 |---|---|---|---|
-| 1 | 8,589 | 10,118 | 16,349 |
-| 2 | 13,207 | 15,657 | 21,947 |
-| 4 | 18,710 | 23,111 | 29,165 |
+| 1 | 8,588 | 10,118 | 16,345 |
+| 2 | 13,206 | 15,656 | 21,943 |
+| 4 | 18,709 | 23,110 | 29,161 |
 
 The contingency contribution (+contingency − energy-only) rises with duration:
-$1,529 → $2,450 → $4,401 (1 → 2 → 4 h). A longer battery can back more
+$1,530 → $2,450 → $4,401 (1 → 2 → 4 h). A longer battery can back more
 long-duration Non-Spin, so up-reserve *does* create duration value — bundled in
 `lambda_bar`, exactly as Decision 13 anticipates. In the contingency-only run
 psi_dn ≡ 0, so this duration curve is pure arbitrage plus that bundled
@@ -162,7 +174,7 @@ up-reserve room (Decision 14) — the gate cannot misfire on the down side.
 **Qualified PROCEED** (Decision 18).
 
 - **By the frozen pre-registration** (tol = 1% median): the contingency-only 2 h
-  cell binds in 7.98% of intervals across 129 days, clearing the ">5% / ≥10 days"
+  cell binds in 8.00% of intervals across 129 days, clearing the ">5% / ≥10 days"
   thresholds. The kill condition (< 1% AND < 5 days, surviving the pre-RTC tau
   re-run) is **not** triggered. The pre-RTC tau re-run (Decision 9) is therefore
   not required to conclude, and was not run.

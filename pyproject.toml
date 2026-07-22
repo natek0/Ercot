@@ -1,0 +1,9 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = [
+    # cvxpy sums an uninitialized np.empty() placeholder during shape/curvature
+    # inference; the warning is third-party and benign (our result arrays are
+    # asserted NaN-free by the no-dumping / complementary-slackness checks).
+    "ignore:invalid value encountered in reduce:RuntimeWarning",
+]

@@ -1440,9 +1440,33 @@ This cannot be settled from the literature and it must not be discovered after t
 
 ## STAGE 1 — Data & oracle foundation (ingest, SQL warehouse, perfect-foresight oracle)
 
-*(Partially done: `src/ingest.py` and the validated `src/step0_lp.py` already exist from Stage 0. This stage generalizes and hardens them.)*
+*(**DONE — at the Stage 1 gate.** Full build record: `reports/stage1_notes.md`.
+**Shipped:** a DuckDB warehouse over the price + MCPC panel with the feature
+pipeline as SQL views (`src/warehouse.py`); the Stage 0 LP generalised into a
+reusable oracle with dual extraction **and boundary conditions** (`s_init` /
+`s_final` / `cyclic`) so Stage 2's MPC can call it in a rolling loop
+(`src/oracle.py`); a 38-test `pytest` verification suite + GitHub Actions CI.
+**Scope decisions (living doc — revisited with new information, reasoning kept):**
+the warehouse covers the two real-time series Stage 0 used; **awards, dispatch,
+forecasts, and day-ahead prices are deferred to the stages that consume them** —
+nothing consumes them yet and building empty fact tables is decoration (§IX.4).
+Re-attachment: ERCOT load/price **forecasts → Stage 3 features**; **day-ahead
+prices + the DA/RT basis + forward premium → an OPTIONAL Stage 3 enhancement / Q1
+color** (not redundant with the RT-only Stages 0–1, but not core — build only if
+the forecaster wants the feature or Q1 is reported); **awards + dispatch dropped
+from the core path** — telemetry is out of scope per Decision 17, revisit only for
+the optional fleet-benchmark add-on (Stage 7). **Data hygiene:** 6 exact-duplicate
+intervals were found and dropped at source (`ingest.dedup_panel`, default on) — a
+hygiene fix, not a parameter change, so consistent with the frozen
+pre-registration; Stage 0 was regenerated on the deduped panel (headline binding
+fraction 7.98% → 8.00%, psi_up max $32.75 and verdict unchanged — "Option A"). A
+**timestamp-gap audit** was added (`warehouse.audit_gaps` + a hard sub-interval
+assertion): the DST spring-forward shows as a clean 75-min forward jump, closing
+the misalignment risk. The §VIII.1 publication-timestamp assertions move to
+Stage 2/3, where point-in-time features and the fact tables that carry
+publication vintages actually arrive.)*
 
-**What.** Production-quality ingest for the full dataset inventory of §IX.3, each row carrying an explicit publication timestamp. A star schema in DuckDB over prices, ancillary clearing, awards, dispatch, and forecasts, with the feature pipeline expressed as SQL views. The perfect-foresight LP generalised from Stage 0 to the full window and all durations, with dual extraction. Add `pytest` coverage of the verification suite and a CI job — the software-engineering evidence the role requires (§XII.10), not an afterthought.
+**What (original intent — reconciled by the status note above).** Production-quality ingest for the full dataset inventory of §IX.3, each row carrying an explicit publication timestamp. A star schema in DuckDB over prices, ancillary clearing, awards, dispatch, and forecasts, with the feature pipeline expressed as SQL views. The perfect-foresight LP generalised from Stage 0 to the full window and all durations, with dual extraction. Add `pytest` coverage of the verification suite and a CI job — the software-engineering evidence the role requires (§XII.10), not an afterthought.
 
 Exploratory analysis delivered here: price versus net load; spike frequency and clustering; the measured day-ahead/real-time ancillary basis by product; and the forward premium **measured, not asserted** (§II.8 — its sign varies by year, hour and product).
 
@@ -1450,7 +1474,7 @@ Exploratory analysis delivered here: price versus net load; spike frequency and 
 
 **Watch for:** `gridstatus.get_as_prices()` raises `ValueError` for dates ≥ 2025-12-06; use the post-RTC endpoints in §IX.3. Resource names changed at the single-model transition — join through the ERCOT mapping file (§IX.1) or pre/post joins will silently fail.
 
-**Gate.** LP passes the complementarity assertion $\min(c_t,d_t)=0$ and the analytical small-instance tests; the ceiling is computed for every duration in the Q3 sweep; publication-timestamp assertions (§VIII.1) pass on the whole warehouse.
+**Gate.** LP passes the complementarity assertion $\min(c_t,d_t)=0$ and the analytical small-instance tests; the ceiling is computed for every duration in the Q3 sweep; publication-timestamp assertions (§VIII.1) pass on the whole warehouse. **Status — met:** the complementarity + analytical + full verification suite pass as `pytest` (38 tests, green in CI); the oracle computes the ceiling for {1,2,4}-h durations (real-data test asserts optimal, finite, and the energy-only ≤ +contingency ≤ +all-products ordering). The §VIII.1 publication-timestamp assertion is **deferred to Stage 2/3** with the fact tables that carry vintages; in its place the warehouse asserts uniqueness, price bounds, monotone + no-sub-interval timestamps, and a time-axis gap audit.
 
 ---
 

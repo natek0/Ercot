@@ -16,5 +16,6 @@ python-dotenv==1.2.2     # loads .env credentials
 python-calamine==0.8.2   # reads ERCOT's non-standard .xlsx MCPC bundles
 openpyxl==3.1.5
 
-# Added in Stage 1 (SQL warehouse)
-duckdb
+# Added in Stage 1 (SQL warehouse + tests/CI)
+duckdb==1.5.4            # SQL warehouse + feature views
+pytest==9.1.1            # verification suite as tests (run in CI)

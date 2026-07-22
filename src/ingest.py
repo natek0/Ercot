@@ -131,7 +131,40 @@ def fetch_mcpc(years=(2025, 2026), cache=True) -> pd.DataFrame:
 # --------------------------------------------------------------------------- #
 # Joined panel                                                                 #
 # --------------------------------------------------------------------------- #
-def build_panel(date_from: str, date_to: str, settlement_point="HB_NORTH") -> pd.DataFrame:
+def dedup_panel(panel: pd.DataFrame) -> pd.DataFrame:
+    """Drop exact-duplicate (date,hour,interval) rows, keeping the first.
+
+    The source pull yields a handful of duplicated intervals (6 in the Dec-Jun
+    window) — the energy query API occasionally repeats a row across a page
+    boundary. We assert the duplicates are IDENTICAL across every value column
+    before dropping, so a future CONFLICTING duplicate (a real data problem)
+    raises instead of being silently discarded.
+    """
+    key = ["date", "hour", "interval"]
+    vals = ["price"] + AS_TYPES
+    dup = panel[panel.duplicated(key, keep=False)]
+    if len(dup):
+        conflicting = dup.groupby(key)[vals].nunique().gt(1).any(axis=1)
+        if conflicting.any():
+            bad = conflicting[conflicting].index.tolist()
+            raise ValueError(
+                f"Conflicting duplicate intervals (different values for the same "
+                f"(date,hour,interval)) — investigate, do not silently drop: {bad[:10]}"
+            )
+    return panel.drop_duplicates(key, keep="first").reset_index(drop=True)
+
+
+def build_panel(date_from: str, date_to: str, settlement_point="HB_NORTH",
+                dedup: bool = True) -> pd.DataFrame:
+    """Join energy + MCPC into one 15-minute panel.
+
+    dedup=True (default, Stage 1 Option A) drops the 6 exact-duplicate intervals
+    the source pull produces — a data-hygiene fix, not a parameter change, so it
+    is consistent with the frozen pre-registration (which freezes the modelling
+    PARAMETERS, not the raw pull). Stage 0's numbers were regenerated on the
+    deduped panel; see the changelog in reports/step0_results.md. Pass
+    dedup=False only to reproduce the pre-dedup historical numbers.
+    """
     e = fetch_energy(date_from, date_to, settlement_point)
     years = tuple(sorted({int(date_from[:4]), int(date_to[:4])}))
     m = fetch_mcpc(years)
@@ -140,7 +173,10 @@ def build_panel(date_from: str, date_to: str, settlement_point="HB_NORTH") -> pd
     panel["ts"] = pd.to_datetime(panel["date"]) + pd.to_timedelta(
         (panel["hour"] - 1) * 60 + (panel["interval"] - 1) * 15, unit="m"
     )
-    return panel.sort_values("ts").reset_index(drop=True)
+    panel = panel.sort_values("ts").reset_index(drop=True)
+    if dedup:
+        panel = dedup_panel(panel)
+    return panel
 
 
 if __name__ == "__main__":

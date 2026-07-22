@@ -26,9 +26,10 @@ baseline — and reads the shadow prices off it.
 
 ## Status
 
-**Stage 0 (viability) is complete — verdict: qualified PROCEED.**
+**Stage 0 (viability) complete — verdict: qualified PROCEED. Stage 1 (data &
+oracle foundation) complete.**
 
-On the full post-launch window (HB_NORTH, 2025-12-05 → 2026-06-20, ~18.9k
+On the full post-launch window (HB_NORTH, 2025-12-05 → 2026-06-20, 18,885
 15-minute intervals), the RTC+B SOC-enforcement constraint binds and its shadow
 price is a **heavy-tailed scarcity price**: near zero in normal conditions (median
 ~$0.02/MWh), spiking to $10–33/MWh on genuine scarcity days. Because
@@ -43,11 +44,19 @@ yet in the data. Full numbers, verification checks, and caveats:
 src/
   ercot_api.py     ERCOT public-reports API client (auth + pagination)
   ingest.py        energy prices (NP6-905-CD) + real-time ancillary MCPC (NP6-796-ER)
-  step0_lp.py      perfect-foresight LP with dual extraction + verification suite
-  step0_run.py     regenerates every reported number from cached raw data
+  oracle.py        perfect-foresight LP oracle: dual extraction + boundary conditions
+                   (s_init/s_final/cyclic) for a rolling MPC; verification suite
+  warehouse.py     DuckDB warehouse over the price+MCPC panel; feature pipeline as
+                   SQL views; integrity assertions + timestamp-gap audit
+  step0_lp.py      Stage 0 compatibility shim re-exporting src.oracle
+  step0_run.py     regenerates every Stage 0 number from cached raw data
+tests/             pytest verification suite (oracle checks, warehouse integrity,
+                   ingest dedup) — runs in CI with no ERCOT data
+.github/workflows/ci.yml   GitHub Actions: install + oracle self-test + pytest
 reports/
   step0_preregistration.md   parameters + kill condition, frozen before the run
   step0_results.md           Stage 0 diagnostics, gate verdict, verification checks
+  stage1_notes.md            Stage 1 build record (warehouse, oracle, tests, decisions)
 docs/
   ERCOT_Battery_Dispatch_Plan_v2.md   full plan: derivations, decisions, execution stages
   step0_spec.md                       Stage 0 build contract
@@ -66,15 +75,29 @@ cp .env.example .env          # then fill in your ERCOT credentials
 python -m src.step0_run       # ingests, solves, prints every diagnostic
 ```
 
-`src/step0_lp.py` also runs a self-test on synthetic prices with no ERCOT account
-needed (`python -m src.step0_lp`), validating the solver and verification checks.
+`src/oracle.py` also runs a self-test on synthetic prices with no ERCOT account
+needed (`python -m src.oracle`), validating the solver and verification checks.
+
+## Stage 1 — warehouse and tests
+
+```bash
+python -m src.warehouse   # build data/warehouse.duckdb + run integrity assertions
+python -m pytest          # 38 tests: oracle verification suite, warehouse, ingest
+```
+
+The warehouse loads the price + MCPC panel into DuckDB and exposes the feature
+pipeline (calendar features, point-in-time lags incl. same-hour-last-week,
+rolling stats, scarcity flags) as SQL views, with integrity assertions and a
+time-axis gap audit. The test suite is CI-gated and needs no ERCOT data — the
+data-dependent tests skip automatically. Full build record:
+[`reports/stage1_notes.md`](reports/stage1_notes.md).
 
 ## Roadmap (stages)
 
 | Stage | Delivers |
 |---|---|
 | 0 — Viability | Perfect-foresight LP, gate, reframe ✅ |
-| 1 — Data & oracle foundation | Full-window ingest, DuckDB/SQL warehouse, LP oracle, tests + CI |
+| 1 — Data & oracle foundation | DuckDB/SQL warehouse, LP oracle w/ boundary conditions, tests + CI ✅ |
 | 2 — MPC / first causal policy | Receding-horizon reoptimization + baseline → first value-of-foresight gap |
 | 3 — Learned price model | Quantile-regression conditional distribution, calibration |
 | 4 — Dynamic program | Optimal causal policy → Q2 (psi_up), Q3 (duration curves) |
