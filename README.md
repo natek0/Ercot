@@ -26,8 +26,9 @@ baseline — and reads the shadow prices off it.
 
 ## Status
 
-**Stage 0 (viability) complete — verdict: qualified PROCEED. Stage 1 (data &
-oracle foundation) complete.**
+**Stages 0–2 complete.** Stage 0 (viability) — qualified PROCEED. Stage 1 (data &
+oracle foundation). Stage 2 (MPC / first causal policy) — first value-of-foresight
+gap measured.
 
 On the full post-launch window (HB_NORTH, 2025-12-05 → 2026-06-20, 18,885
 15-minute intervals), the RTC+B SOC-enforcement constraint binds and its shadow
@@ -50,8 +51,12 @@ src/
                    SQL views; integrity assertions + timestamp-gap audit
   step0_lp.py      Stage 0 compatibility shim re-exporting src.oracle
   step0_run.py     regenerates every Stage 0 number from cached raw data
-tests/             pytest verification suite (oracle checks, warehouse integrity,
-                   ingest dedup) — runs in CI with no ERCOT data
+  forecast.py      causal price forecasters (persistence, seasonal-naive, perfect)
+  policies.py      naive threshold floor + receding-horizon MPC (Stage 2)
+  backtest.py      walk-forward simulator; no-lookahead by construction
+  stage2_run.py    value-of-foresight ladder + reserves + causal psi_up
+tests/             pytest verification suite (oracle, warehouse, ingest, Stage 2)
+                   — runs in CI with no ERCOT data
 .github/workflows/ci.yml   GitHub Actions: install + oracle self-test + pytest
 reports/
   step0_preregistration.md   parameters + kill condition, frozen before the run
@@ -92,13 +97,29 @@ time-axis gap audit. The test suite is CI-gated and needs no ERCOT data — the
 data-dependent tests skip automatically. Full build record:
 [`reports/stage1_notes.md`](reports/stage1_notes.md).
 
+## Stage 2 — MPC and the value of foresight
+
+```bash
+python -m src.stage2_run          # 63-day demo (fast)
+python -m src.stage2_run --full   # full post-launch window (~15 min)
+```
+
+A receding-horizon MPC (re-optimising every 15 min against a forecast) is walked
+forward with no lookahead against a perfect-foresight ceiling and a naive floor.
+Over the full window at 2 h, the **value of foresight is $16,660**, and it is 98%
+**forecast-error cost**: with a perfect forecast the same controller captures 97%
+of the ceiling, but a naive same-hour-last-week forecast turns a $13k opportunity
+into a loss — the gap that Stages 3–4 exist to close. Reserves (co-optimised) add
+a steady +$2,919 "safe carry." Full detail:
+[`reports/stage2_notes.md`](reports/stage2_notes.md).
+
 ## Roadmap (stages)
 
 | Stage | Delivers |
 |---|---|
 | 0 — Viability | Perfect-foresight LP, gate, reframe ✅ |
 | 1 — Data & oracle foundation | DuckDB/SQL warehouse, LP oracle w/ boundary conditions, tests + CI ✅ |
-| 2 — MPC / first causal policy | Receding-horizon reoptimization + baseline → first value-of-foresight gap |
+| 2 — MPC / first causal policy | Receding-horizon MPC + reserves → first value-of-foresight gap ✅ |
 | 3 — Learned price model | Quantile-regression conditional distribution, calibration |
 | 4 — Dynamic program | Optimal causal policy → Q2 (psi_up), Q3 (duration curves) |
 | 5 — Statistics & writeup | Walk-forward protocol, sign test, power statement |

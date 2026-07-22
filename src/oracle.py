@@ -130,6 +130,7 @@ def solve(
     s_init: float | None = None,
     s_final: float | None = None,
     cyclic: bool = True,
+    terminal_value: float | None = None,
     solver=cp.HIGHS,
 ) -> OracleResult:
     """Solve the perfect-foresight LP over a price window and return the schedule
@@ -147,8 +148,11 @@ def solve(
       * s_final not None: S[T] == s_final. A hard terminal-SOC target.
       Fixing either endpoint turns OFF the cyclic constraint (they would conflict).
       NOTE for Stage 2: a finite horizon with a FREE end (s_init set, s_final None)
-      will drain the battery at the horizon edge — the classic MPC end effect. The
-      fix is a terminal value function, which is Stage 2/4 work, not the oracle's.
+      will drain the battery at the horizon edge — the classic MPC end effect. Pass
+      `terminal_value` ($/MWh) to value leftover charge S[T] in the objective and
+      stop the drain. A simple placeholder (a trailing/reference price) is right for
+      Stage 2; the principled terminal value is the converged DP value function
+      (Stage 4).
     """
     P = np.asarray(P, dtype=float)
     T = len(P)
@@ -166,6 +170,9 @@ def solve(
     profit = cp.sum(cp.multiply(P, d - c)) * dt - c_deg * cp.sum(c + d) * dt
     for k in up + dn:
         profit = profit + cp.sum(cp.multiply(np.asarray(mcpc[k], float), u[k])) * dt
+    if terminal_value is not None:
+        # value leftover charge at the horizon edge ($/MWh on the final SOC node)
+        profit = profit + terminal_value * S[T]
 
     up_sum = sum((u[k] for k in up), start=0)
     dn_sum = sum((u[k] for k in dn), start=0)

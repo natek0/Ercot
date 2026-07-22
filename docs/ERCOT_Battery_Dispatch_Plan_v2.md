@@ -1480,6 +1480,21 @@ Exploratory analysis delivered here: price versus net load; spike frequency and 
 
 ## STAGE 2 — MPC / first causal policy (and the value-of-foresight baseline)
 
+*(**DONE.** Record: `reports/stage2_notes.md`. `src/backtest.py` (no-lookahead
+walk-forward harness), `src/policies.py` (naive threshold floor + receding-horizon
+MPC), `src/forecast.py` (causal forecasters), `src/stage2_run.py`; 10 Stage-2
+tests. **Full-window result @ 2 h: value of foresight $16,660 = $360 execution +
+$16,300 forecast error** — with a perfect forecast the same controller captures
+97% of the ceiling, so the gap is almost entirely forecast quality. Reserve
+co-optimisation adds a steady +$2,919 carry (energy −$3,453 → total −$366). The
+causal psi_up (Decision 19) is extracted from each solve's headroom dual — median
+matches Stage 0, tail ~4× fatter (max $141 vs $33). Execution decision: the MPC
+commits the LP's planned first action (certainty-equivalent); the mu[0]-priced
+offer curve of §IV.6/§VIII.2 captured only ~57% even with perfect foresight
+(degenerate at SOC bounds) and is deferred to Stage 4, where the DP value function
+supplies a robust water value. The naive floor still executes as a genuine offer
+curve, so both models are exercised.)*
+
 **What.** A receding-horizon reoptimization controller: at each interval, solve the Stage 1 LP over a rolling look-ahead window using a *forecast* of future prices (not the realised future), convert the first-interval plan into an offer curve per §IV.6, execute, advance, re-solve. Start with a simple, transparent forecast (e.g. same-hour-last-week, or a small regression); the forecast is upgraded to the learned model of Stage 3 later without changing the controller. Backtest walk-forward on real prices against two references: the Stage 0 perfect-foresight LP (ceiling) and a naive threshold policy (floor). Report the first **value-of-foresight gap**.
 
 **Why here — before the dynamic program.** It reuses the Stage 1 oracle almost verbatim, so it is the fastest causal policy to stand up, and it is the most production-realistic artifact ("deploying algorithms to a production trading stack"). It is also not throwaway: the certainty-equivalent MPC is exactly the baseline the exact DP of Stage 4 must beat (§IV.6, §VIII.2), so building it now is building a required comparator. The live-decision-log track begins here, with the MPC as its first occupant.
