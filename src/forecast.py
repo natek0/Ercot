@@ -89,3 +89,100 @@ class PerfectForecaster(Forecaster):
             pad = fut[-1] if len(fut) else (history[-1] if len(history) else 0.0)
             fut = np.concatenate([fut, np.full(horizon - len(fut), pad)])
         return fut
+
+
+@dataclass
+class LearnedForecaster(Forecaster):
+    """Stage 3's forecast: the learned conditional price model behind the SAME
+    .predict(history, horizon) contract the MPC already consumes. The point path is
+
+        P̂_{t+ℓ} = m(t+ℓ)  +  phi^ℓ · r̂_t ,    ℓ = 0 .. horizon-1
+
+    the deseasonalised seasonal mean m at the (known) future calendar cell, plus the
+    GBT-median one-step residual r̂_t = q̂_0.5(f_t) decaying at the residual's AR(1)
+    rate phi. The certainty-equivalent MPC consumes only this mean; the FULL predictive
+    distribution (all quantiles) is scored in src/walkforward and feeds the Stage 4 DP.
+
+    CAUSALITY — two layers, both leak-free:
+      * The model is RE-FIT ONLINE by calendar month (walk-forward, §VIII.3): at row t
+        it is trained only on COMPLETE months strictly before t's month, cached per
+        cutoff. So every prediction in a full-window backtest is out-of-sample and
+        directly comparable to the Stage-2 naive-MPC number.
+      * Conditioning features at t are strictly-past (src/features.CONDITIONING), read
+        from a feature frame precomputed on the full panel — legitimate because each
+        feature row depends only on rows <= its own index (a test asserts the frame's
+        row t equals the frame rebuilt from prices[:t]).
+
+    Constructed with the panel's own `ts` and `prices` (like PerfectForecaster holds
+    `full`); n = len(history) is the absolute row index. Falls back to a seasonal-naive
+    forecast until `min_train_months` of history exist.
+    """
+
+    ts: object                        # (T,) panel timestamps (np.datetime64 or pandas)
+    prices: np.ndarray                # (T,) panel prices — SAME array the backtest marches
+    min_train_months: int = 2
+    fallback: Forecaster = None
+    _feat: object = None              # precomputed full-panel feature frame (lazy)
+    _cache: dict = None               # training-cutoff Period -> (seasonal, q50_model, phi)
+
+    def __post_init__(self):
+        import pandas as pd
+        from src import features as F
+        self._pd = pd
+        self._F = F
+        self.ts = pd.to_datetime(pd.Series(self.ts)).reset_index(drop=True)
+        self.prices = np.asarray(self.prices, float)
+        if self.fallback is None:
+            self.fallback = SeasonalNaiveForecaster(period=WEEK)
+        self._ym = self.ts.dt.to_period("M")
+        self._months = list(self._ym.drop_duplicates())
+        self._feat = F.build_features(
+            pd.DataFrame({"ts": self.ts, "price": self.prices}))
+        self._cache = {}
+
+    def _fit_cutoff(self, cutoff_period):
+        """Fit (seasonal, q50 model, phi) on all rows in months strictly before
+        `cutoff_period`. Cached — refits only when the month boundary advances."""
+        if cutoff_period in self._cache:
+            return self._cache[cutoff_period]
+        F = self._F
+        train_mask = (self._ym < cutoff_period).to_numpy()
+        seasonal = F.fit_seasonal(self._feat.iloc[train_mask])
+        fr = F.add_residual_features(self._feat, seasonal)
+        tr = fr.iloc[train_mask].dropna(subset=F.CONDITIONING + ["resid"])
+        from src.price_model import QuantileGBT, fit_ar1_phi
+        q50 = QuantileGBT(levels=np.array([0.5])).fit(
+            F.conditioning_matrix(tr), tr["resid"].to_numpy(float))
+        phi = fit_ar1_phi(tr)
+        self._cache[cutoff_period] = (seasonal, fr, q50, phi)
+        return self._cache[cutoff_period]
+
+    def predict(self, history: np.ndarray, horizon: int) -> np.ndarray:
+        n = len(history)
+        # not enough complete months of history yet -> seasonal-naive fallback
+        if n == 0 or self._ym.iloc[n] < self._months[self.min_train_months]:
+            return self.fallback.predict(history, horizon)
+
+        cutoff = self._ym.iloc[n]                      # train on months strictly before this
+        seasonal, fr, q50, phi = self._fit_cutoff(cutoff)
+
+        # anchor residual forecast r̂_t from the strictly-past features at row n
+        X = self._F.conditioning_matrix(fr.iloc[[n]])
+        if not np.isfinite(X).all():                  # a lag not yet available
+            return self.fallback.predict(history, horizon)
+        r_hat = float(q50.models[0.5].predict(X)[0])
+
+        # future calendar: use the panel's real ts where available (gap-aware), then
+        # extrapolate a regular 15-min grid past the panel's end.
+        idx = np.arange(n, n + horizon)
+        in_range = idx < len(self.ts)
+        fut_ts = np.empty(horizon, dtype="datetime64[ns]")
+        fut_ts[in_range] = self.ts.to_numpy()[idx[in_range]]
+        if (~in_range).any():
+            last = self.ts.iloc[-1]
+            k = (idx[~in_range] - (len(self.ts) - 1))
+            fut_ts[~in_range] = (last + self._pd.to_timedelta(k * 15, unit="m")).to_numpy()
+
+        m = seasonal.eval_ts(fut_ts)
+        decay = phi ** np.arange(horizon)
+        return m + decay * r_hat

@@ -19,3 +19,7 @@ openpyxl==3.1.5
 # Added in Stage 1 (SQL warehouse + tests/CI)
 duckdb==1.5.4            # SQL warehouse + feature views
 pytest==9.1.1            # verification suite as tests (run in CI)
+
+# Added in Stage 3 (learned conditional price distribution)
+scikit-learn==1.7.2      # gradient-boosted-tree quantile regression (pinball loss),
+                         # isotonic rearrangement; prebuilt wheel, needs only numpy/scipy

@@ -1515,6 +1515,8 @@ curve, so both models are exercised.)*
 
 **Gate.** Calibration histograms flat on held-out folds — or the deviation characterised, with its direction of bias on the policy stated explicitly. Every fitted object re-fit inside each walk-forward fold (§VIII.3); the fold-intersection assertion passes.
 
+**Status: COMPLETE** (see `reports/stage3_notes.md`). GBT quantile regression beat both baselines on held-out CRPS (learned 2.708 < jump 2.903 < empirical 5.192, 4/5 folds) → adopted. Gate MET with a *characterised* deviation: PIT near-uniform (KS 0.031) but mildly under-dispersed in the tails → biases the Stage 4 policy to under-hold for spikes (toward MPC); mitigation (extreme tail levels / variance inflation) is the first Stage 4 action. Hour-indexed transition matrices (log-spaced tail bins) are row-stochastic and irreducible. Swapped into the certainty-equivalent MPC the learned forecast recovered $3,139 = 19% of the $16,300 forecast-error cost (median only; the tail value is Stage 4's).
+
 ---
 
 ## STAGE 4 — Periodic dynamic program and the headline results *(the headline deliverable — built in full)*
