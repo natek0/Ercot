@@ -1556,10 +1556,18 @@ decisions that Stage 4 must honour. Recorded here so they are not lost between s
    is a Markov chain on the *deseasonalised residual* $r$; the DP reward uses the *actual*
    price $P_t = m(h,\text{weekend},\text{month}) + \bar r_{b}$ (bin centre). The month level
    enters the REWARD, not the transition kernel — keeping the residual chain month-agnostic
-   (consistent with [A4], §IV.9) while the price level tracks the season. This also means the
-   summer top-up (Decision B2) enters through $m$ and the kernel re-fit, so per §IV.9 [A4]
-   the honest form is to **fit and solve separately by season and report both**, not one
-   pooled fixed point.
+   (consistent with [A4], §IV.9) while the price level tracks the season.
+   **Seasonal solve — DECIDED, data-limited (revises the earlier "solve by season and report
+   both").** With only ~228 days (5 Dec 2025 → present: late winter → spring → the *start* of
+   summer, no full summer or full year) and only ~10–20 binding scarcity days across the WHOLE
+   window (§VIII.5a), a genuine by-season split is data-starved. So: **solve one pooled 24-periodic
+   fixed point on the full available window**, with the month-level seasonal absorbing the
+   winter→spring level drift; **label it explicitly as a late-winter-through-early-summer result
+   that does not cover the Jul–Sep scarcity peak**; and **schedule the summer re-solve as the data
+   accrues (Decision B2)** — summer can only raise the headline. **Data refresh — DECIDED:**
+   re-ingest to ~today (~228 days) before building, extending the Stage 0–3 panel (Dec-5..Jun-20,
+   198 days) into the first weeks of summer; Stage 0–3 figures are regenerated on the extended
+   panel for comparability.
 
 4. **Thin-hour transitions rest on the smoothing prior — report it.** The empirical kernel's
    raw observed process is NOT irreducible on the full window (`counts_irreducible=False`);
@@ -1567,18 +1575,27 @@ decisions that Stage 4 must honour. Recorded here so they are not lost between s
    prior. So the policy on thin $(h,\text{bin})$ cells is partly prior-driven. Report a
    sensitivity to the prior and flag which hours are prior-dominated.
 
-5. **State-dimension decision — minimal $(h,b)$ vs augmented $(h,b,z)$.** Stage 3 measured a
-   highly persistent residual (AR $\varphi\approx0.96$) with hour-clustered spikes. A 1-step
-   $P(b'\mid h,b)$ chain is strongly diagonal and may under-anticipate spike *clusters*. §III.14
-   allows a second tabulated coordinate $z$ (a volatility/scarcity-regime indicator). Decide
-   $(h,b)$ vs $(h,b,z)$ by the §VIII.7 augmentation test (add the coordinate, re-solve, measure
-   the change in the headline); do not assume $(h,b)$ suffices.
+5. **State dimension — DECIDED: start $(h,b)$, then test $(h,b,z)$ (option 3C).** Stage 3
+   measured a highly persistent residual (AR $\varphi\approx0.96$) with hour-clustered spikes, so
+   a 1-step $P(b'\mid h,b)$ chain is strongly diagonal and may under-anticipate spike *clusters*.
+   Build the minimal $(h,b)$ = (hour, residual-bin) DP first (parsimonious, sample-safe — the
+   raw-count support is already thin), then run the **§VIII.7 augmentation test** with a coarse
+   2–3-level volatility/scarcity regime $z$ (§III.14 allows it): re-solve and measure the change
+   in the headline (option value / $\psi^{\text{up}}$ / duration curve). **Adopt $(h,b,z)$ only if
+   it materially moves the headline AND the $(h,b,z)$ cells are not too thin** (adding $z$ worsens
+   the sparsity already flagged in item 4). Let the data decide; do not assume $(h,b)$ suffices.
 
-6. **The reserve/MCPC side needs its own conditional treatment.** Stage 3 built the ENERGY
-   price distribution only. The (AS) co-optimisation of §IV.10 also needs the reserve MCPCs
-   and the deployment factor $\rho_k(\mathbf{x})$ (§IV.19) to price $\psi^{\text{up}}$ (Q2). Stage 2/3
-   used a seasonal-naive MCPC. Stage 4 must at minimum specify an hour/regime-conditioned MCPC
-   expectation and a deployment model, or document the simplification and its effect on $\psi^{\text{up}}$.
+6. **Reserve/MCPC treatment — DECIDED: option 2A (expected MCPC + constant $\rho_k$).** Stage 3
+   built the ENERGY price distribution only, but $\psi^{\text{up}}$ (Q2) requires the (AS)
+   co-optimisation of §IV.10, which needs the reserve MCPCs and the deployment factor
+   $\rho_k(\mathbf{x})$ (§IV.19). The fuller model (a stochastic MCPC distribution + state-dependent
+   $\rho_k$) is **blocked**: $\rho_k$ needs dispatch/deployment telemetry, which is out of scope
+   (Decision 17). So Stage 4 co-optimises energy + reserves under (EH-up) with an
+   **hour/regime-conditioned *expected* MCPC** (trivial from the warehouse) and a **documented
+   constant deployment factor $\rho_k$, swept as a sensitivity**. This delivers a DP-based causal
+   $\psi^{\text{up}}$ (Decision 19) without telemetry; the honest caveat is that a constant $\rho_k$
+   flattens the adverse-correlation deployment term (§IV.10), so report the $\rho_k$ sensitivity and
+   state that $\psi^{\text{up}}$'s scarcity-tail variability is a lower bound on that account.
 
 7. **The value-of-information decomposition (§IV.13) is now anchored.** $\mathcal{V}^{\text{PF}}=\$13{,}206$
    (Stage 0 ceiling, 2 h), $\mathcal{V}^{\text{MPC}}=-\$303$ (Stage 3 learned MPC), $\mathcal{V}^{\text{heur}}=-\$5{,}267$
