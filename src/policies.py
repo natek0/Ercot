@@ -218,6 +218,7 @@ class WalkForwardDPPolicy(Policy):
     reserves: bool = False
     rho: float = 0.05
     kernel_kind: str = "empirical"      # 'empirical' (count matrix) or 'learned' (GBT-integrated)
+    state: str = "hb"                   # 'hb' or 'hbz' (add a scarcity-regime coordinate z)
     product_set: dict = field(default_factory=lambda: oracle.ENERGY_ONLY)
     _cache: dict = None
 
@@ -251,6 +252,19 @@ class WalkForwardDPPolicy(Policy):
             ht = markov.transition_model(gbt, tr, edges)
         else:
             ht = markov.transition_counts(tr, edges)
+        K, centers, N_z = ht.matrices, ht.bin_centers, 1
+        if self.state == "hbz":                          # augment with a scarcity regime z
+            N_z = 2
+            b_now = np.clip(np.digitize(tr["resid"].to_numpy(float), edges[1:-1]), 0, self.n_bins - 1)
+            z = tr["scarcity_recent"].fillna(0).astype(int).to_numpy()
+            flat = b_now * N_z + z
+            hour = tr["hour_of_day"].to_numpy(int)
+            ne = self.n_bins * N_z
+            cnt = np.zeros((24, ne, ne))
+            for hh, fp, fn in zip(hour[1:], flat[:-1], flat[1:]):
+                cnt[hh, fp, fn] += 1.0
+            K = (cnt + 0.01) / (cnt + 0.01).sum(axis=2, keepdims=True)
+            centers = ht.bin_centers[np.arange(ne) // N_z]
         # POOLED diurnal profile (median training price by quarter-of-day over ALL days),
         # not a representative-weekday/rep-month one — this matches what execution averages
         # over (arbitrage is spike-driven, so the seasonal level is second-order anyway).
@@ -260,9 +274,9 @@ class WalkForwardDPPolicy(Policy):
         if self.reserves:
             rp = reserves.hour_reserve_prices(self.panel.iloc[train])
             rtabs = reserves.build_reserve_tables(rp, self.params, self.E_max, self.rho)
-        res = dp.solve_dp(ht.matrices, ht.bin_centers, prof, self.params, self.E_max,
+        res = dp.solve_dp(K, centers, prof, self.params, self.E_max,
                           N_S=self.N_S, reserve_tables=rtabs)
-        art = (seasonal, ht.matrices, edges, res.V, res.reserve_psi)
+        art = (seasonal, K, edges, res.V, res.reserve_psi, N_z)
         self._cache[cutoff] = art
         return art
 
@@ -270,11 +284,15 @@ class WalkForwardDPPolicy(Policy):
         t = len(hist.prices)
         if t == 0 or self._ym.iloc[t] < self._months[self.min_train_months]:
             return CommittedDispatch(0.0, 0.0)          # warm-up: hold
-        seasonal, K, edges, V, rpsi = self._fit_cutoff(self._ym.iloc[t])
-        H, N_b = V.shape[0], V.shape[2]
+        seasonal, K, edges, V, rpsi, N_z = self._fit_cutoff(self._ym.iloc[t])
+        H = V.shape[0]
+        n_resid = (V.shape[2]) // N_z
         h = int(self._qod[t])
         m_prev = seasonal.eval_ts([self.ts.iloc[t - 1]])[0]
-        b = int(np.clip(np.digitize(self._prices[t - 1] - m_prev, edges[1:-1]), 0, N_b - 1))
+        b = int(np.clip(np.digitize(self._prices[t - 1] - m_prev, edges[1:-1]), 0, n_resid - 1))
+        if N_z > 1:                                       # add the scarcity-regime coordinate
+            z = int(self._prices[t - 1] > 100.0)
+            b = b * N_z + z
         hour = h * 24 // H
         # b is the LAST-OBSERVED bin (t-1); the current bin is uncertain, distributed
         # K[hour][b]. Propagate one extra kernel step so we don't treat a stale spike bin

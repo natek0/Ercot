@@ -1622,6 +1622,8 @@ decisions that Stage 4 must honour. Recorded here so they are not lost between s
 
 **Why the power statement matters disproportionately.** "This design could detect a difference above 8% of the perfect-foresight ceiling; smaller differences are not resolvable with this sample" is the single most credibility-enhancing sentence available, and almost nobody writes it.
 
+**Stage-4-surfaced items that land here (from the Stage 4 review, `reports/stage4_decisions.md`).** The Stage 4 leak-free ladder already reports a stationary block-bootstrap 95% CI on $V^{\text{DP}}$, and it **straddles zero** ($[-\$263,\,\$5{,}666]$ on the traded window) — the DP's edge is not statistically separable from zero on this thin, tail-concentrated sample, which is exactly the §VIII.5 point and must be the headline framing, not the point estimate. Stage 5 must then: (i) run the **sign test** on daily $V^{\text{DP}} - V^{\text{MPC}}$ differences (the distribution-free headline); (ii) **recompute the MPC comparators over the matched traded (post-warm-up) window** so the option value is not inflated by the DP's warm-up exemption; (iii) report **block-length sensitivity** of the CI; (iv) the **power statement**; (v) $\text{CI}$s on the empirical$-$learned kernel gap (§V.26, which is within-noise and sign-flips across `n_bins`) and on $\psi^{\text{up}}$; (vi) the **per-day / top-5-day concentration** decomposition of $V^{\text{DP}}$ to show the value is spike-concentrated (asserted in Stage 4, not yet shown).
+
 **Gate.** Every headline number carries a bracket (ceiling and floor), an interval, and a concentration statistic. One command regenerates every figure from raw data.
 
 ---

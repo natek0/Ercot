@@ -1,0 +1,31 @@
+
+=== (A) leak-free value-of-foresight ladder @ 2h (198 days) ===
+  ceiling (perfect-foresight LP):     $    13,206   100%
+  MPC, perfect forecast (clairvoyant):$    12,847    97%
+  >>> DP (optimal causal, WALK-FORWARD):$    2,364    18% full
+      DP capture on the MATCHED traded window (post warm-up):  34% (V^DP $2,364 / ceiling $6,972)
+      DP daily-bootstrap 95% CI on V^DP (traded): [$-263, $5,666]
+  do-nothing (never trade):           $         0    0%   <- the true floor
+  MPC, learned forecast (Stage 3):    $      -303
+  MPC, same-hour-last-week (Stage 2): $    -3,453
+  naive threshold floor:              $    -5,267
+
+  §IV.13:  value of information (ceiling-V^DP) = $  10,843
+           option value (V^DP - learned MPC)  = $   2,667  (positive; but INFLATED — the MPC ate warm-up losses the DP was exempted from; the honest comparison recomputes the MPC over the matched traded window — a Stage 5 item)
+  V^DP is walk-forward / leak-free (WalkForwardDPPolicy scramble test in tests/test_dp.py).
+
+=== Q3 — duration-value curves (198 days, energy-only, walk-forward, ΔS-constant grid ~100 nodes/h) ===
+   E(h)   N_S    V_PF $    V_DP $  capture   dV_DP/dE
+    0.5    50     5,064      -153     -3%        nan
+    1.0   100     8,588       505      6%      1,316
+    2.0   200    13,206     2,364     18%      1,859
+    3.0   300    16,363     3,438     21%      1,074
+    4.0   400    18,709     4,366     23%        928
+    6.0   600    21,295     5,264     25%        449
+    8.0   800    22,921     5,643     25%        189
+  do-nothing floor = $0: at 0.5h V^DP < 0, i.e. the causal policy is dominated by inaction there (round trips positioning for spikes that don't arrive).
+
+=== §V.26 capture-rate prong @ 2h (walk-forward, n_bins sweep) ===
+  ceiling $13,206
+   n_bins  empirical $  learned $  emp-lrn
+       10        1,977      2,211     -234
