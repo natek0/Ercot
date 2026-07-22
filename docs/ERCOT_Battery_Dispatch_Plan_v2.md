@@ -1529,6 +1529,70 @@ curve, so both models are exercised.)*
 
 **Gate.** Bellman residual below tolerance at every state and hour; $\mu$ monotone non-increasing in $S^+$; grid convergence demonstrated across $N_S \in \{50,100,200,400\}$; **the finite-difference-versus-multiplier-sum identity of §IV.11 holds.** That last check is nearly free, almost nobody runs it, and it validates the multiplier extraction that Q2 depends on entirely.
 
+### STAGE 4 — updates from the Stage 3 build & three-agent review
+
+The §IV mathematics is unchanged and correct. Stage 3 (and its adversarial review, see
+`reports/stage3_review.md`) added an ORDERED set of preconditions, deliverables, and
+decisions that Stage 4 must honour. Recorded here so they are not lost between stages.
+
+1. **First action — recalibrate the transition kernel's tail before freezing it.** Stage 3's
+   held-out PIT is near-uniform (KS 0.024) but retains a genuine **mild under-dispersion
+   (+22% end-bin excess)** after the month-level deseasonaliser removed the seasonal level
+   bias. Per §V.25 an under-dispersed forecast biases the DP to UNDER-value the right tail →
+   hold *less* charge for spikes → the policy degenerates toward MPC and the **option value**
+   of §IV.13 is understated. Since option value *is* the economic justification for building
+   the DP over the MPC, tail calibration is load-bearing, not cosmetic. Do: add a light tail
+   inflation / more extreme quantile mass, re-check with a NON-clamping PIT, then freeze the
+   kernel. (Extreme levels 0.005/0.995 are already in `LEVELS`.)
+
+2. **Close the §V.26 adoption gate — the capture-rate prong.** Stage 3 adopted the learned
+   model only PROVISIONALLY, on the held-out CRPS win. §V.26 requires a CRPS win AND a better
+   *realised capture rate*. Stage 4 must solve the DP on BOTH the learned kernel and the
+   empirical count kernel and compare realised out-of-sample policy value. Adopt the learned
+   kernel only if it also wins realised capture; if the empirical kernel wins, adopt it — a
+   publishable negative result (§V.26), not a failure.
+
+3. **The reward reconstructs price from the month-aware seasonal + residual bin.** The kernel
+   is a Markov chain on the *deseasonalised residual* $r$; the DP reward uses the *actual*
+   price $P_t = m(h,\text{weekend},\text{month}) + \bar r_{b}$ (bin centre). The month level
+   enters the REWARD, not the transition kernel — keeping the residual chain month-agnostic
+   (consistent with [A4], §IV.9) while the price level tracks the season. This also means the
+   summer top-up (Decision B2) enters through $m$ and the kernel re-fit, so per §IV.9 [A4]
+   the honest form is to **fit and solve separately by season and report both**, not one
+   pooled fixed point.
+
+4. **Thin-hour transitions rest on the smoothing prior — report it.** The empirical kernel's
+   raw observed process is NOT irreducible on the full window (`counts_irreducible=False`);
+   the DP-required irreducibility (Assumption A2, §IV.1) is supplied by a small 0.01 count
+   prior. So the policy on thin $(h,\text{bin})$ cells is partly prior-driven. Report a
+   sensitivity to the prior and flag which hours are prior-dominated.
+
+5. **State-dimension decision — minimal $(h,b)$ vs augmented $(h,b,z)$.** Stage 3 measured a
+   highly persistent residual (AR $\varphi\approx0.96$) with hour-clustered spikes. A 1-step
+   $P(b'\mid h,b)$ chain is strongly diagonal and may under-anticipate spike *clusters*. §III.14
+   allows a second tabulated coordinate $z$ (a volatility/scarcity-regime indicator). Decide
+   $(h,b)$ vs $(h,b,z)$ by the §VIII.7 augmentation test (add the coordinate, re-solve, measure
+   the change in the headline); do not assume $(h,b)$ suffices.
+
+6. **The reserve/MCPC side needs its own conditional treatment.** Stage 3 built the ENERGY
+   price distribution only. The (AS) co-optimisation of §IV.10 also needs the reserve MCPCs
+   and the deployment factor $\rho_k(\mathbf{x})$ (§IV.19) to price $\psi^{\text{up}}$ (Q2). Stage 2/3
+   used a seasonal-naive MCPC. Stage 4 must at minimum specify an hour/regime-conditioned MCPC
+   expectation and a deployment model, or document the simplification and its effect on $\psi^{\text{up}}$.
+
+7. **The value-of-information decomposition (§IV.13) is now anchored.** $\mathcal{V}^{\text{PF}}=\$13{,}206$
+   (Stage 0 ceiling, 2 h), $\mathcal{V}^{\text{MPC}}=-\$303$ (Stage 3 learned MPC), $\mathcal{V}^{\text{heur}}=-\$5{,}267$
+   (naive floor). Stage 4 supplies $\mathcal{V}^{\text{DP}}$; the **option-value** term
+   $\mathcal{V}^{\text{DP}}-\mathcal{V}^{\text{MPC}}$ is the deliverable that justifies the DP, and (§IV.13/Q4)
+   should rise with volatility/spike frequency — stratify by regime. Under-dispersion (item 1)
+   biases this term LOW, which is why item 1 precedes the headline.
+
+8. **Causal $\psi^{\text{up}}$ (Q2) is the DP's, and it lower-bounds nothing.** Stage 0 gave the
+   perfect-foresight $\psi^{\text{up}}$ (a floor); Stage 2 a forecast-limited naive-MPC value.
+   Stage 4's DP gives the definitive competent-causal $\psi^{\text{up}}$ (Decision 19), extracted
+   from (AS) (§IV.10) and validated by the §IV.11 FD-vs-multiplier identity. This remains the
+   co-headline (Decision 12).
+
 ---
 
 ## STAGE 5 — Statistical protocol and writeup *(apply after this)*
