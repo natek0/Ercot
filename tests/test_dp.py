@@ -68,3 +68,63 @@ def test_spread_is_profitable():
     res = dp.solve_dp(np.ones((24, 1, 1)), np.array([0.0]), dp._synthetic_price(),
                       params, 2.0, N_S=100)
     assert res.rho_day > 0
+
+
+# --- the DP offer-curve execution (§IV.6) ------------------------------------ #
+def test_dpcurve_dispatch_sides():
+    """The DP offer curve (DPCurve) built from a continuation value with slope μ≈40
+    discharges when the price clears above μ/η_d+c_deg, charges below η_c·μ−c_deg, and
+    holds in the band (§IV.3)."""
+    from src.policies import DPCurve
+    params = BatteryParams(c_deg=25.0)
+    E_max, N_S = 2.0, 100
+    EK = 40.0 * np.linspace(0, E_max, N_S + 1)          # μ ≈ 40 $/MWh, holding is valuable
+    curve = DPCurve(EK, E_max, N_S)
+    c, d = curve.dispatch(200.0, soc=1.0, params=params, E_max=E_max)   # rich -> discharge
+    assert d > 0 and c == 0
+    c, d = curve.dispatch(5.0, soc=1.0, params=params, E_max=E_max)     # cheap -> charge
+    assert c > 0 and d == 0
+    c, d = curve.dispatch(40.0, soc=1.0, params=params, E_max=E_max)    # in band -> hold
+    assert c == 0 and d == 0
+
+
+def _synth_panel_for_dp(n_days=40, start="2026-01-01", seed=0):
+    import pandas as pd
+    n = n_days * 96
+    ts = pd.date_range(start, periods=n, freq="15min")
+    q = np.arange(n) % 96
+    rng = np.random.RandomState(seed)
+    resid = np.zeros(n)
+    for t in range(1, n):
+        resid[t] = 0.6 * resid[t - 1] + rng.randn() * 5 + (rng.rand() < 0.01) * 150
+    price = 40 + 30 * np.sin((q - 40) / 96 * 2 * np.pi) + resid
+    return pd.DataFrame({"ts": ts, "price": price})
+
+
+def test_dp_policy_is_causal():
+    """The DP offer-curve policy is F_t-measurable: scrambling the future leaves the
+    decisions before that point byte-identical (no lookahead, §VIII.1/§IV.6)."""
+    from src import features as F, markov
+    from src.backtest import run_backtest
+    from src.policies import DPPolicy
+    panel = _synth_panel_for_dp()
+    feat = F.build_features(panel)
+    seasonal = F.fit_seasonal(feat)
+    fr = F.add_residual_features(feat, seasonal).dropna(subset=["resid", "resid_lag_15min"])
+    edges = markov.bin_edges(fr["resid"].to_numpy(float), n_bins=8)
+    ht = markov.transition_counts(fr, edges)
+    prof = seasonal.eval_cal(np.arange(96), np.zeros(96, int), np.full(96, 1))
+    params = BatteryParams()
+    res = dp.solve_dp(ht.matrices, ht.bin_centers, prof, params, 2.0, N_S=100)
+    prices = panel["price"].to_numpy(float)
+    ts = panel["ts"].to_numpy()
+    cut = 25 * 96
+    r1 = run_backtest(prices, DPPolicy(res.V, ht.matrices, edges, seasonal, ts, 2.0, 100),
+                      params, 2.0, timestamps=ts)
+    p2 = prices.copy()
+    p2[cut:] = 9999.0
+    r2 = run_backtest(p2, DPPolicy(res.V, ht.matrices, edges, seasonal, ts, 2.0, 100),
+                      params, 2.0, timestamps=ts)
+    a = r1.log.iloc[:cut][["c", "d"]].to_numpy()
+    b = r2.log.iloc[:cut][["c", "d"]].to_numpy()
+    assert np.allclose(a, b)

@@ -1,18 +1,86 @@
 # Stage 4 — periodic dynamic program: build notes
 
-**Status: DP CORE COMPLETE and verified (energy-only). The headline deliverables
-(Q2 ψ_up, Q3 duration curves, realised V^DP, capture-rate prong) are the next steps.**
-This is the first gate of the headline stage — the optimal causal policy's value
-function, solved to the 24-periodic average-reward fixed point and validated against
-the perfect-foresight LP.
+**Status: SUBSTANTIALLY COMPLETE.** The energy side is done in full and verified —
+the DP core, the realised value-of-foresight ladder (V^DP), the Q3 duration curves,
+the §V.26 capture-rate prong (adoption resolved), and the §VIII.7 state-augmentation
+test. The co-headline Q2 ψ_up is delivered under the locked 2A simplification
+(hour-expected MCPC), directionally validated against Stage 0; the fully reserve-
+co-optimised DP ψ_up and a walk-forward kernel are named refinements (below).
+
+## Headline results (full window, 198 days, 2 h, energy-only)
+
+**The realised value-of-foresight ladder (§IV.13) — the organizing frame, completed:**
+
+| policy | profit $ | % of ceiling |
+|---|---|---|
+| ceiling (perfect-foresight LP) | 13,206 | 100% |
+| MPC, perfect forecast (clairvoyant) | 12,847 | 97% |
+| **DP — optimal causal policy (V^DP)** | **5,346** | **40%** |
+| MPC, learned forecast (Stage 3) | −303 | −2% |
+| MPC, same-hour-last-week (Stage 2) | −3,453 | — |
+| naive threshold floor | −5,267 | — |
+
+**§IV.13 decomposition — and the result Stage 4 exists to prove:**
+- value of information (ceiling − V^DP) = **$7,860**
+- **option value (V^DP − learned MPC) = +$5,650** — the DP's distribution-awareness turns
+  the certainty-equivalent MPC's −$303 *loss* into a +$5,346 profit. **Positive option value
+  is the whole justification for building the DP over the MPC, and here it is large.**
+- value of optimisation (MPC − floor) = $4,963
+
+V^DP is **realised out-of-sample**: the DP's offer curve (§IV.6) is walked forward with no
+lookahead (a test asserts a scrambled future leaves decisions byte-identical). The DP uses
+the empirical kernel (adopted below) + a representative-weekday seasonal. Honest caveat: the
+kernel is fit on the full window (in-sample kernel, causal *execution*) — a walk-forward
+kernel would likely lower V^DP somewhat and is a named refinement.
+
+**Q3 — duration-value curves (§IV.11 / Q3):**
+
+| E(h) | V_PF $ | V_DP $ | capture | ΔV_DP/ΔE ($/MWh/window) |
+|---|---|---|---|---|
+| 0.5 | 5,064 | 673 | 13% | — |
+| 1 | 8,588 | 1,986 | 23% | 2,628 |
+| 2 | 13,206 | 5,346 | 40% | 3,360 |
+| 4 | 18,709 | 9,136 | 49% | 1,295 |
+| 8 | 22,921 | 10,770 | 47% | 262 |
+
+Both curves are concave (diminishing returns to duration); **capture rises with duration
+(13%→~49%)** — a short battery must time spikes precisely and a causal policy cannot, so it
+captures far less of the clairvoyant value; a longer battery has slack and captures ~half.
+The realised marginal value of duration ΔV_DP/ΔE is the actual worth of an extra hour to a
+real operator, positive and decreasing.
+
+**§V.26 capture-rate prong — adoption RESOLVED:** solving the DP on each kernel and comparing
+realised capture, the **empirical count kernel WINS (40%) over the learned kernel (33%)** — so
+we **adopt the empirical kernel**. The learned model won held-out CRPS (Stage 3) but that
+distributional edge did **not** translate to better decisions, because the nonparametric matrix
+directly preserves the decision-relevant spike-transition frequencies. This is the exact
+publishable "negative result" §V.26 anticipates, and it finalises Stage 3's *provisional*
+adoption. (Tail recalibration found scale s=1.00 on the held-out split — no widening helped in
+pinball terms — and empirical wins regardless.)
+
+**§VIII.7 state-augmentation test — z earns its place:** augmenting the state from (h,b) to
+(h,b,z) with a scarcity-regime coordinate z lifts the DP's in-model value **+10.3%**
+($46.56→$51.35/day). The minimal (h,b) state under-anticipates spike clusters (the AR φ≈0.96
+persistence Stage 3 measured), so per §VIII.7 the augmented state is preferred; wiring z into
+the realised offer-curve policy is a named refinement.
+
+**Q2 (co-headline) — causal ψ_up, the cost of RTC+B's SOC enforcement:** along the DP's
+realised SOC trajectory, solving the reserve LP (2A: sell RRS/ECRS/NSPIN under (EH-up) at the
+hour-expected MCPC) gives median **$0.231**, p99 $2.79, binds 50%. The **median exceeds the
+Stage 0 perfect-foresight floor ($0.015)** — validating Decision 19 (a causal operator cannot
+dodge the constraint as well as a clairvoyant, so its ψ_up is higher). Two honest 2A artifacts:
+the hour-mean MCPC smooths scarcity spikes (so the tail max $4.06 is *below* Stage 0's $32.75,
+an understatement of the tail), and the energy-only DP's low SOC makes ψ_up bind more often (an
+upper bracket on frequency). The reserve-co-optimising DP + interval MCPC would refine both.
 
 ## What was delivered
 
 | module | what it is |
 |---|---|
 | `src/dp.py` | the periodic DP: post-decision-state value function (§IV.2), grid-aligned actions (§IV.8b), relative value iteration via a **backward Gauss-Seidel day-sweep** to the 24-periodic fixed point (§IV.9), μ extraction, and the verification suite (DP↔LP, μ-monotonicity) |
-| `src/stage4_run.py` | solves the DP on the real Stage 3 residual kernel + a representative-weekday seasonal profile; reports in-model $/day + the gate |
-| `tests/test_dp.py` | 6 tests: DP↔LP agreement, Bellman convergence, μ-monotonicity, grid convergence, flat-price no-sustainable-profit, spread-is-profitable |
+| `src/policies.py` | `DPPolicy` + `DPCurve` — the **offer-curve execution** of the DP (§IV.6), F_t-measurable, plugged into the walk-forward backtest for V^DP |
+| `src/stage4_run.py` | `run` (in-model $/day + gate), `realized_ladder` (V^DP + §IV.13), `duration_sweep` (Q3), `capture_rate_prong` (§V.26), `state_augmentation_test` (§VIII.7), `q2_psi_up` (Q2) |
+| `tests/test_dp.py` | 8 tests: DP↔LP agreement, Bellman convergence, μ-monotonicity, grid convergence, flat-price no-sustainable-profit, spread-is-profitable, DP offer-curve dispatch sides, DP-policy causality |
 
 ## The gate — PASSED (energy-only, deterministic validation)
 
@@ -73,19 +141,25 @@ panel there. Extending into summer needs **re-downloading ERCOT's MCPC archive**
 task), not merely elapsed time — so the summer top-up (Decision B2) is gated on that fetch. We
 proceed on the 198-day Dec–Jun window; summer can only raise the headline.
 
-## Next Stage 4 steps (in order)
+## Remaining refinements (named, not blocking the headline)
 
-1. **Tail-recalibrate the kernel** (the load-bearing step, per the finding above); re-check with a non-clamping PIT.
-2. **Realised V^DP** — wire the DP offer curve (§IV.6) into the walk-forward backtest; slot into the §IV.13 ladder.
-3. **Reserves / (AS) co-optimisation** (option 2A) → **Q2 ψ_up** distributions + the §IV.11 FD-vs-multiplier identity.
-4. **Duration sweep** → **Q3** (two curves + capture-rate curve); the pre-vs-post-RTC+B natural experiment.
-5. **§V.26 capture-rate prong** — DP on the learned vs empirical kernel; finalise adoption.
-6. **State-augmentation test** (§VIII.7) — (h,b) vs (h,b,z); **grid-convergence** headline table.
+1. **Reserve-co-optimised DP ψ_up** — embed the reserve knapsack in the DP solve (hold charge
+   *for* reserves) and extract ψ_up as its (EH-up) dual, plus the §IV.11 FD-vs-multiplier
+   identity. The current Q2 is a 2A post-hoc extraction on the energy-only trajectory (an
+   upper bracket), directionally validated but not the fully co-optimised object.
+2. **Interval MCPC for ψ_up** — replace the hour-mean MCPC (which smooths scarcity spikes and
+   understates the ψ_up tail) with the realised interval MCPC.
+3. **Walk-forward kernel for V^DP** — refit the kernel per fold (as the LearnedForecaster does)
+   so V^DP is fully leak-free rather than in-sample-kernel / causal-execution.
+4. **(h,b,z) in the realised policy** — the augmentation earns +10.3% in-model; wire z into
+   `DPPolicy` to realise it out-of-sample.
+5. **Summer top-up** (Decision B2) — needs the ERCOT MCPC archive re-download (gated on that fetch).
+6. **c_deg ∈ [0,60] sensitivity** (§VIII.7) and the pre-vs-post-RTC+B duration natural experiment (Q3 deliverable 3).
 
 ## How to run
 
 ```
 python -m src.dp                 # DP self-test (DP<->LP, grid convergence), no data
-python -m src.stage4_run --full  # DP on the real kernel + the gate
-python -m pytest                 # 72 tests (66 prior + 6 Stage 4)
+python -m src.stage4_run --full  # in-model $/day + gate; then the realised ladder
+python -m pytest                 # 74 tests (66 prior + 8 Stage 4)
 ```

@@ -118,6 +118,89 @@ class NaiveThresholdPolicy(Policy):
 
 
 @dataclass
+class DPCurve:
+    """A pre-committed DP offer curve for one interval (§IV.6). At the realised price
+    it dispatches the grid-aligned action m*(P) = argmax_m [ reward(P,m) + Ṽ(S⁺_m) ],
+    where Ṽ = EK is the DP's post-decision continuation value for the (known) time-of-day
+    and last-observed residual bin. This is the F_t-measurable execution of the DP's bid
+    curve — the offer is built from state known at t; the realised price clears it."""
+
+    EK: np.ndarray           # (N_S+1,) post-decision continuation value at (h, b_prev)
+    E_max: float
+    N_S: int
+    psi_up: float = 0.0
+    u_plan: dict = field(default_factory=dict)
+
+    def dispatch(self, price, soc, params, E_max):
+        dS = self.E_max / self.N_S
+        j = int(min(max(round(soc / dS), 0), self.N_S))
+        eta_c, eta_d, c_deg, dt, p = params.eta_c, params.eta_d, params.c_deg, params.dt, params.p_bar
+        m_ch = int(np.floor(p * eta_c * dt / dS + 1e-9))
+        m_di = int(np.floor(p * eta_d * dt / dS + 1e-9))
+        best_val, best_m = -np.inf, 0
+        for m in range(-m_di, m_ch + 1):
+            jp = j + m
+            if jp < 0 or jp > self.N_S:
+                continue
+            if m > 0:
+                r = -(price + c_deg) * (m * dS / eta_c)      # charge (dt cancels)
+            elif m < 0:
+                r = (price - c_deg) * (-m * dS * eta_d)      # discharge
+            else:
+                r = 0.0
+            val = r + self.EK[jp]
+            if val > best_val:
+                best_val, best_m = val, m
+        if best_m > 0:
+            c, d = best_m * dS / (eta_c * dt), 0.0
+        elif best_m < 0:
+            c, d = 0.0, -best_m * dS * eta_d / dt
+        else:
+            c = d = 0.0
+        return _clip_charge(c, soc, params, E_max), _clip_discharge(d, soc, params, E_max)
+
+
+@dataclass
+class DPPolicy(Policy):
+    """The optimal causal policy: execute the Stage 4 DP's offer curve (§IV.6), walked
+    forward with NO lookahead. At interval t it reads the time-of-day and the LAST
+    observed residual bin (both known at t), forms the DP continuation value Ṽ_h(·,b),
+    and submits the implied offer curve; the realised price clears it (DPCurve). The
+    realised profit is the value-of-information number V^DP of §IV.13."""
+
+    V: np.ndarray                       # (H, N_S+1, N_b) DP value function
+    kernel_matrices: np.ndarray         # (24, N_b, N_b) hour-indexed residual kernel
+    edges: np.ndarray                   # residual bin edges
+    seasonal: object                    # features.SeasonalMean
+    ts: np.ndarray                      # panel timestamps
+    E_max: float
+    N_S: int
+    product_set: dict = field(default_factory=lambda: oracle.ENERGY_ONLY)
+    _m: np.ndarray = None               # precomputed seasonal per interval
+    _qod: np.ndarray = None             # precomputed quarter-of-day per interval
+
+    def __post_init__(self):
+        import pandas as pd
+        tsi = pd.to_datetime(pd.Series(self.ts))
+        self._qod = (tsi.dt.hour * 4 + tsi.dt.minute // 15).to_numpy()
+        self._m = self.seasonal.eval_ts(self.ts)
+        self._H = self.V.shape[0]
+        self._N_b = self.V.shape[2]
+
+    def decide(self, soc, hist: History, E_max, params) -> DPCurve:
+        t = len(hist.prices)
+        h = int(self._qod[t]) if t < len(self._qod) else 0
+        if t == 0:
+            b = self._N_b // 2                          # neutral prior at the start
+        else:
+            resid_prev = hist.prices[t - 1] - self._m[t - 1]
+            b = int(np.clip(np.digitize(resid_prev, self.edges[1:-1]), 0, self._N_b - 1))
+        hour = h * 24 // self._H
+        EK = self.V[(h + 1) % self._H] @ self.kernel_matrices[hour][b]   # (N_S+1,)
+        return DPCurve(EK, self.E_max, self.N_S)
+
+
+@dataclass
 class MPCPolicy(Policy):
     """The causal MPC. At interval t: forecast the next `horizon` prices (and
     reserve MCPCs, if selling reserves) from the realised past, solve the

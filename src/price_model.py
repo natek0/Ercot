@@ -132,6 +132,43 @@ class QuantileGBT:
         return rearrange(np.column_stack(cols), self.levels)
 
 
+@dataclass
+class RecalibratedGBT:
+    """A QuantileGBT whose predictive quantiles are widened around the median by a
+    dispersion scale s ≥ 1 to correct the mild under-dispersion Stage 3 measured
+    (§V.25) — the DP's spike option value is driven by the tail, so a too-tight tail
+    makes the DP under-hold. q'_α = median + s·(q_α − median). `s` is fit on HELD-OUT
+    data (min pinball), never in-sample, since under-dispersion is an out-of-sample
+    phenomenon (in-sample the base model already minimises pinball at s=1)."""
+
+    base: QuantileGBT
+    scale: float = 1.0
+
+    @property
+    def levels(self):
+        return self.base.levels
+
+    def predict_quantiles(self, feat_resid: pd.DataFrame) -> np.ndarray:
+        q = self.base.predict_quantiles(feat_resid)
+        mi = int(np.argmin(np.abs(self.base.levels - 0.5)))
+        med = q[:, mi][:, None]
+        return med + self.scale * (q - med)
+
+
+def fit_recalibration(base: QuantileGBT, feat_valid: pd.DataFrame,
+                      scales=None) -> RecalibratedGBT:
+    """Pick the dispersion scale minimising pinball on a HELD-OUT validation frame."""
+    if scales is None:
+        scales = np.linspace(1.0, 3.0, 21)
+    ev = feat_valid.dropna(subset=F.CONDITIONING + ["resid"])
+    y = ev["resid"].to_numpy(float)
+    q = base.predict_quantiles(ev)
+    mi = int(np.argmin(np.abs(base.levels - 0.5)))
+    med = q[:, mi][:, None]
+    losses = [pinball_loss(y, med + s * (q - med), base.levels) for s in scales]
+    return RecalibratedGBT(base, float(scales[int(np.argmin(losses))]))
+
+
 # --------------------------------------------------------------------------- #
 # Model 2 — empirical conditional distribution (§V.26 count-based baseline)   #
 # --------------------------------------------------------------------------- #
