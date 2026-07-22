@@ -1,0 +1,25 @@
+
+=== Q3 — duration-value curves (198 days, energy-only, walk-forward) ===
+   E(h)    V_PF $    V_DP $  capture   dV_DP/dE
+    0.5     5,064      -230     -5%        nan
+    1.0     8,588       356      4%      1,171
+    2.0    13,206     2,195     17%      1,839
+    3.0    16,363     3,270     20%      1,075
+    4.0    18,709     4,164     22%        893
+    6.0    21,295     4,903     23%        370
+    8.0    22,921     5,101     22%         99
+
+=== §V.26 capture-rate prong @ 2h (walk-forward) ===
+  ceiling $13,206
+  kernel          V_DP $  capture
+  empirical        2,195     17%
+  learned          2,006     15%
+  ADOPT: empirical kernel (best realised walk-forward capture).
+
+=== Q2 — causal ψ_up (co-optimised reserve DP, walk-forward) ===
+  C1 validation (ψ_up = FD of reserve value): 5/5 points pass
+     ρ_k   median ψ      p90      p99      max   binds%
+    0.00      0.020    0.155    0.662     0.72     4.8%
+    0.05      0.000    0.000    0.365     1.17     1.1%
+    0.15      0.000    0.000    0.000     0.58     0.1%
+  vs Stage 0 perfect-foresight floor (median $0.015): the causal median should EXCEED it (Decision 19). B2 hour-mean MCPC smooths the ψ_up tail (a named caveat).

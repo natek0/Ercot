@@ -101,6 +101,47 @@ def _synth_panel_for_dp(n_days=40, start="2026-01-01", seed=0):
     return pd.DataFrame({"ts": ts, "price": price})
 
 
+def test_reserve_psi_equals_finite_difference():
+    """C1 gate (§IV.11-style): the reserve LP's ψ_up (dual on the energy/EH-up constraint)
+    equals the finite-difference of the reserve value w.r.t. the backing-charge budget."""
+    from src import reserves
+    params = BatteryParams()
+    tau = np.array([params.tau[k] for k in reserves.UP_PRODUCTS])
+    a = tau / params.eta_d
+    v = (np.array([3.0, 3.0, 3.0]) - params.c_deg * 0.05 * tau) * params.dt
+    for E in (0.1, 0.3, 0.5, 0.8, 1.2):
+        psi, fl, fr, ok = reserves.validate_psi(E, 1.0, v, a)
+        assert ok, (E, psi, fl, fr)
+
+
+def test_reserve_psi_positive_when_empty_zero_when_full():
+    """ψ_up > 0 when the battery is too empty to back reserves (the rule bites), and 0
+    when charge is abundant (the rule is free)."""
+    from src import reserves
+    params = BatteryParams()
+    tau = np.array([params.tau[k] for k in reserves.UP_PRODUCTS])
+    a = tau / params.eta_d
+    v = (np.array([3.0, 3.0, 3.0]) - params.c_deg * 0.05 * tau) * params.dt
+    _, psi_empty = reserves.reserve_lp(0.1, 1.0, v, a)
+    _, psi_full = reserves.reserve_lp(1.5, 1.0, v, a)
+    assert psi_empty > 0
+    assert psi_full == 0.0
+
+
+def test_reserves_raise_dp_value():
+    """Co-optimising reserves into the DP adds reserve income, so ρ_day >= energy-only,
+    and the reserve ψ_up table is produced for Q2."""
+    from src import reserves
+    params = BatteryParams()
+    P = dp._synthetic_price()
+    tables = reserves.build_reserve_tables(np.full((24, 3), 3.0), params, 2.0, rho=0.05)
+    eng = dp.solve_dp(np.ones((24, 1, 1)), np.array([0.0]), P, params, 2.0, N_S=100)
+    res = dp.solve_dp(np.ones((24, 1, 1)), np.array([0.0]), P, params, 2.0, N_S=100,
+                      reserve_tables=tables)
+    assert res.rho_day >= eng.rho_day - 1e-6
+    assert res.reserve_psi is not None and res.reserve_psi.min() >= 0.0
+
+
 def test_dp_policy_is_causal():
     """The DP offer-curve policy is F_t-measurable: scrambling the future leaves the
     decisions before that point byte-identical (no lookahead, §VIII.1/§IV.6)."""

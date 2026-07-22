@@ -201,6 +201,87 @@ class DPPolicy(Policy):
 
 
 @dataclass
+class WalkForwardDPPolicy(Policy):
+    """The optimal causal policy, made LEAK-FREE (§VIII.3): the transition kernel, seasonal,
+    bin edges, reserve prices and the DP solve are ALL re-fit online by calendar month on
+    strictly-prior data (expanding window), exactly like the LearnedForecaster. So V^DP is
+    genuinely out-of-sample (no in-sample kernel). During the warm-up (first `min_train_months`)
+    it holds. With reserves on, it co-optimises energy + reserves and logs the causal ψ_up
+    (Q2) along the trajectory via the DPCurve's `psi_up`."""
+
+    panel: object                       # DataFrame with ts, price, and MCPC columns
+    params: object
+    E_max: float
+    N_S: int = 200
+    min_train_months: int = 2
+    n_bins: int = 12
+    reserves: bool = False
+    rho: float = 0.05
+    kernel_kind: str = "empirical"      # 'empirical' (count matrix) or 'learned' (GBT-integrated)
+    product_set: dict = field(default_factory=lambda: oracle.ENERGY_ONLY)
+    _cache: dict = None
+
+    def __post_init__(self):
+        import pandas as pd
+        from src import features as F
+        self._pd, self._F = pd, F
+        self.ts = pd.to_datetime(self.panel["ts"]).reset_index(drop=True)
+        self._qod = (self.ts.dt.hour * 4 + self.ts.dt.minute // 15).to_numpy()
+        self._ym = self.ts.dt.to_period("M")
+        self._months = list(self._ym.drop_duplicates())
+        self._feat = F.build_features(self.panel)
+        self._prices = self.panel["price"].to_numpy(float)
+        self._cache = {}
+        if self.reserves:
+            self.product_set = oracle.CONTINGENCY
+
+    def _fit_cutoff(self, cutoff):
+        if cutoff in self._cache:
+            return self._cache[cutoff]
+        from src import dp, markov, reserves
+        F = self._F
+        train = (self._ym < cutoff).to_numpy()
+        seasonal = F.fit_seasonal(self._feat.iloc[train])
+        fr = F.add_residual_features(self._feat, seasonal)
+        tr = fr.iloc[train].dropna(subset=["resid", "resid_lag_15min"])
+        edges = markov.bin_edges(tr["resid"].to_numpy(float), n_bins=self.n_bins)
+        if self.kernel_kind == "learned":
+            from src.price_model import QuantileGBT
+            gbt = QuantileGBT().fit(F.conditioning_matrix(tr), tr["resid"].to_numpy(float))
+            ht = markov.transition_model(gbt, tr, edges)
+        else:
+            ht = markov.transition_counts(tr, edges)
+        rep_month = int(self._feat.iloc[train].sort_values("ts")["month"].iloc[-1])
+        prof = seasonal.eval_cal(np.arange(96), np.zeros(96, int), np.full(96, rep_month))
+        rtabs = None
+        if self.reserves:
+            rp = reserves.hour_reserve_prices(self.panel.iloc[train])
+            rtabs = reserves.build_reserve_tables(rp, self.params, self.E_max, self.rho)
+        res = dp.solve_dp(ht.matrices, ht.bin_centers, prof, self.params, self.E_max,
+                          N_S=self.N_S, reserve_tables=rtabs)
+        art = (seasonal, ht.matrices, edges, res.V, res.reserve_psi)
+        self._cache[cutoff] = art
+        return art
+
+    def decide(self, soc, hist: History, E_max, params) -> DPCurve:
+        t = len(hist.prices)
+        if t == 0 or self._ym.iloc[t] < self._months[self.min_train_months]:
+            return CommittedDispatch(0.0, 0.0)          # warm-up: hold
+        seasonal, K, edges, V, rpsi = self._fit_cutoff(self._ym.iloc[t])
+        H, N_b = V.shape[0], V.shape[2]
+        h = int(self._qod[t])
+        m_prev = seasonal.eval_ts([self.ts.iloc[t - 1]])[0]
+        b = int(np.clip(np.digitize(self._prices[t - 1] - m_prev, edges[1:-1]), 0, N_b - 1))
+        hour = h * 24 // H
+        EK = V[(h + 1) % H] @ K[hour][b]
+        psi = 0.0
+        if rpsi is not None:
+            j = int(min(max(round(soc / (self.E_max / self.N_S)), 0), self.N_S))
+            psi = float(rpsi[h, j, b])
+        return DPCurve(EK, self.E_max, self.N_S, psi_up=psi)
+
+
+@dataclass
 class MPCPolicy(Policy):
     """The causal MPC. At interval t: forecast the next `horizon` prices (and
     reserve MCPCs, if selling reserves) from the realised past, solve the

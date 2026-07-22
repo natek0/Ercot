@@ -56,6 +56,9 @@ class DPResult:
     bellman_residual: float  # max |ρ + V - T V| after convergence
     iters: int
     span_history: list = field(default_factory=list)
+    actions: np.ndarray = None            # (A,) grid-step action set
+    reserve_psi: np.ndarray = None        # (H, N_S+1, A) ψ_up at (h, post-decision node, action)
+    reserve_rho_day: float = 0.0          # reserve income component of ρ_day ($)
 
 
 def _admissible_actions(params: BatteryParams, E_max: float, N_S: int) -> np.ndarray:
@@ -65,6 +68,41 @@ def _admissible_actions(params: BatteryParams, E_max: float, N_S: int) -> np.nda
     m_charge_max = int(np.floor(params.p_bar * params.eta_c * params.dt / dS + 1e-9))
     m_dis_max = int(np.floor(params.p_bar * params.eta_d * params.dt / dS + 1e-9))
     return np.arange(-m_dis_max, m_charge_max + 1)
+
+
+def _net_discharge(actions, params, E_max, N_S):
+    """Net discharge (d-c, MW) per action m — sets the up-reserve power budget p̄-(d-c)."""
+    dS = E_max / N_S
+    nd = np.zeros(len(actions))
+    for a, m in enumerate(actions):
+        if m > 0:
+            nd[a] = -(m * dS / (params.eta_c * params.dt))     # charging: net discharge < 0
+        elif m < 0:
+            nd[a] = -m * dS * params.eta_d / params.dt          # discharging
+    return nd
+
+
+def _interp_fixedP(gridvals, E_grid, P_grid, E_query, P):
+    """Bilinear lookup of a (nE,nP) table at all E in E_query for a fixed P."""
+    colP = np.array([np.interp(P, P_grid, gridvals[i]) for i in range(len(E_grid))])
+    return np.interp(E_query, E_grid, colP)
+
+
+def _reserve_by_action(reserve_tables, actions, params, E_max, N_S, S_grid, H):
+    """(H, N_S+1, A) reserve VALUE and ψ_up at (time-of-day h, post-decision node S⁺, action)
+    — A2: the power budget p̄-(d-c) depends on the action, the energy budget on S⁺. The
+    reserve tables are hour-indexed (24); expand to the DP's H quarter-of-day indices."""
+    rval, rpsi, E_grid, P_grid = reserve_tables          # rval, rpsi: (24, nE, nP)
+    nd = _net_discharge(actions, params, E_max, N_S)
+    val = np.zeros((H, N_S + 1, len(actions)))
+    psi = np.zeros((H, N_S + 1, len(actions)))
+    for a in range(len(actions)):
+        pb = params.p_bar - nd[a]
+        for h in range(H):
+            hour = h * 24 // H
+            val[h, :, a] = _interp_fixedP(rval[hour], E_grid, P_grid, S_grid, pb)
+            psi[h, :, a] = _interp_fixedP(rpsi[hour], E_grid, P_grid, S_grid, pb)
+    return val, psi
 
 
 def _reward_table(P_hb: np.ndarray, actions: np.ndarray, params: BatteryParams,
@@ -89,13 +127,16 @@ def _reward_table(P_hb: np.ndarray, actions: np.ndarray, params: BatteryParams,
 def solve_dp(kernel_by_hour: np.ndarray, resid_center: np.ndarray, seasonal: np.ndarray,
              params: BatteryParams, E_max: float, N_S: int = 100, *,
              max_iter: int = 4000, tol: float = 1e-7,
-             ref: tuple = (0, 0)) -> DPResult:
+             ref: tuple = (0, 0), reserve_tables=None) -> DPResult:
     """Solve the periodic average-reward DP.
 
     kernel_by_hour : (24, N_b, N_b) row-stochastic residual transition matrices.
     resid_center   : (N_b,) representative residual per bin ($/MWh).
     seasonal       : (H,) representative price level per time-of-day index ($/MWh).
     Reconstructed price P[h,b] = seasonal[h] + resid_center[b].
+    reserve_tables : optional (value, psi, E_grid, P_grid) from src.reserves — if given,
+        the reserve VALUE is added to the reward so the DP CO-OPTIMISES energy + reserves
+        (holds charge for reserves), and the reserve ψ_up is stored for Q2 extraction.
     """
     seasonal = np.asarray(seasonal, float)
     resid_center = np.asarray(resid_center, float)
@@ -112,6 +153,12 @@ def solve_dp(kernel_by_hour: np.ndarray, resid_center: np.ndarray, seasonal: np.
     A = len(actions)
     jref, bref = ref
 
+    # reserve value/ψ_up per (h, post-decision node, action) — added to the reward so the
+    # DP holds charge for reserves (A2/B2/C1); zero if no reserves.
+    rv = rpsi = None
+    if reserve_tables is not None:
+        rv, rpsi = _reserve_by_action(reserve_tables, actions, params, E_max, N_S, S_grid, H)
+
     def bellman_row(h, Vnext):
         """(T_h Vnext)(·) over all (j,b): max over grid-aligned actions."""
         EK = Vnext @ K[h].T                            # (N_S+1, N_b) post-decision value
@@ -120,7 +167,10 @@ def solve_dp(kernel_by_hour: np.ndarray, resid_center: np.ndarray, seasonal: np.
             lo, hi = max(0, -m), min(N_S, N_S - m)     # valid j: 0 <= j+m <= N_S
             if lo > hi:
                 continue
-            cand = R[h, :, a][None, :] + EK[np.arange(lo, hi + 1) + m]
+            jp = np.arange(lo, hi + 1) + m
+            cand = R[h, :, a][None, :] + EK[jp]
+            if rv is not None:
+                cand = cand + rv[h, jp, a][:, None]    # + reserve income at S⁺ (co-opt)
             cur = best[lo:hi + 1]
             np.maximum(cur, cand, out=cur)
         return best, EK
@@ -153,20 +203,29 @@ def solve_dp(kernel_by_hour: np.ndarray, resid_center: np.ndarray, seasonal: np.
     # constant = ρ_day, so its span -> 0); that final span is the Bellman residual here.
     policy = np.zeros((H, N_S + 1, N_b), int)
     mu = np.zeros((H, N_S + 1, N_b))
+    reserve_psi = np.zeros((H, N_S + 1, N_b)) if rpsi is not None else None
     for h in range(H):
         Vnext = V[(h + 1) % H]
         EK = Vnext @ K[h].T
         best = np.full((N_S + 1, N_b), -np.inf)
         arg = np.zeros((N_S + 1, N_b), int)
+        argpsi = np.zeros((N_S + 1, N_b)) if rpsi is not None else None
         for a, m in enumerate(actions):
             lo, hi = max(0, -m), min(N_S, N_S - m)
             if lo > hi:
                 continue
-            cand = R[h, :, a][None, :] + EK[np.arange(lo, hi + 1) + m]
+            jp = np.arange(lo, hi + 1) + m
+            cand = R[h, :, a][None, :] + EK[jp]
+            if rv is not None:
+                cand = cand + rv[h, jp, a][:, None]
             better = cand > best[lo:hi + 1]
             best[lo:hi + 1] = np.where(better, cand, best[lo:hi + 1])
             arg[lo:hi + 1] = np.where(better, m, arg[lo:hi + 1])
+            if rpsi is not None:
+                argpsi[lo:hi + 1] = np.where(better, rpsi[h, jp, a][:, None], argpsi[lo:hi + 1])
         policy[h] = arg
+        if reserve_psi is not None:
+            reserve_psi[h] = argpsi
         # μ_h = ∂Ṽ/∂S⁺ (discrete forward difference of the post-decision value EK)
         mu[h, 1:] = (EK[1:] - EK[:-1]) / dS
         mu[h, 0] = mu[h, 1]
@@ -174,7 +233,8 @@ def solve_dp(kernel_by_hour: np.ndarray, resid_center: np.ndarray, seasonal: np.
     return DPResult(V=V, policy=policy, mu=mu, rho_interval=rho_interval,
                     rho_day=rho_day, E_max=E_max, N_S=N_S, dt=params.dt,
                     S_grid=S_grid, bellman_residual=(span_hist[-1] if span_hist else 0.0),
-                    iters=len(span_hist), span_history=span_hist)
+                    iters=len(span_hist), span_history=span_hist,
+                    actions=actions, reserve_psi=reserve_psi)
 
 
 # --------------------------------------------------------------------------- #
