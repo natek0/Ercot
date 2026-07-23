@@ -1648,6 +1648,8 @@ decisions that Stage 4 must honour. Recorded here so they are not lost between s
 
 **Framing, non-negotiable.** Modo Energy and Ascend Analytics sell products that do this. It is not novel and must not be presented as such. Its value is that it is open, reproducible, and checkable — agreement with published benchmarks validates the pipeline, disagreement is itself a finding. Present it as *validating an economic model against observed behaviour*, which is both accurate and a named responsibility of the role.
 
+**Detailed pre-registration & build plan: `reports/stage7_plan.md`** (committed before code, per the Step 0 precedent). A read-only feasibility spike (2026-07-23) confirmed the data is accessible, free, and complete: the dedicated `60d_ESR_Data_in_SCED` file carries telemetered output, State of Charge, Min/Max SOC (→ duration directly, no external join), HSL, and RT AS awards; `60d_DAM_ESR_Data` carries the DA energy award, settlement point, DA price, and DA AS awards + MCPC. Two spike-driven refinements to the "What" above: (i) retrieval is via the **public** key, not the ESR key (corrects §IX.1); (ii) the shortfall decomposition is **descoped** to the observable energy-vs-AS split plus the gap to our own modelled policy — the finer forecast-vs-SOC attribution is not identifiable from disclosure and is not claimed. Data is streamed and discarded (no bulk local storage); ~324 ESRs in the universe.
+
 ---
 
 ## STAGE 8 — Risk chapter (Q5 and Q5b) *(optional add-on)*
