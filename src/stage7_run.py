@@ -273,14 +273,78 @@ def _print_fleet(df, elig, months, n_days):
           f"a per-month comparison is the refinement.")
 
 
+LOCATE_CACHE = "data/raw/stage7_locate_policy.parquet"
+
+
+def our_dp_capture(con, assets_df, N_S=100, min_train_months=2, verbose=True):
+    """Run OUR Stage-4 walk-forward DP on each asset's OWN node prices at its power/duration, and
+    return our modelled ENERGY capture next to the operator's realised energy capture. This is the
+    'locate our policy' punchline: where would our causal DP rank in the real fleet? Energy-only,
+    walk-forward (causal, like the real operators). Reuses WalkForwardDPPolicy unchanged."""
+    from src.backtest import run_backtest
+    from src.oracle import BatteryParams
+    from src.policies import WalkForwardDPPolicy
+    out = []
+    n = len(assets_df)
+    for i, row in enumerate(assets_df.itertuples()):
+        pr = con.execute("SELECT ts_15min AS ts, rt_lmp AS price FROM prices_node "
+                         "WHERE settlement_point=? ORDER BY ts_15min", [row.settlement_point]).df()
+        our_cap = float("nan")
+        if len(pr) >= 96 * 90 and row.ceiling_gross and row.ceiling_gross > 1.0:
+            try:
+                params = BatteryParams(p_bar=float(row.hsl_mw))
+                pol = WalkForwardDPPolicy(pr, params, float(row.max_soc_mwh), N_S=N_S,
+                                          min_train_months=min_train_months)
+                r = run_backtest(pr["price"].to_numpy(float), pol, params, float(row.max_soc_mwh),
+                                 s_init=0.0, timestamps=pr["ts"].to_numpy())
+                our_cap = r.profit / row.ceiling_gross      # same full-window ceiling as realised
+            except Exception:                               # noqa: BLE001
+                pass
+        out.append({"resource_name": row.resource_name, "settlement_point": row.settlement_point,
+                    "duration_h": row.duration_h, "our_dp_capture": our_cap,
+                    "realized_capture": row.capture})
+        if verbose and (i % 20 == 0):
+            fw.write_status(f"Stage 7 LOCATE-OUR-POLICY (DP per asset)\n  {i+1}/{n} solved\n  in progress...")
+            print(f"  [{i+1}/{n}] {row.resource_name}: our {our_cap:.0%} vs realised {row.capture:.0%}", flush=True)
+    df = pd.DataFrame(out)
+    fw.write_status(f"Stage 7 LOCATE-OUR-POLICY\n  {n}/{n} solved\n  >>> COMPLETE")
+    return df
+
+
+def locate_our_policy(con, sample=None, N_S=100, verbose=True):
+    """Compute our-DP vs realised capture across the eligible fleet (or a `sample`), cache it, and
+    report the percentile at which our modelled policy would rank."""
+    energy = energy_cross_section(con, use_cache=True, verbose=False)
+    elig = energy[(energy["eligible_reason"] == "eligible") & (energy["capture"].notna())].copy()
+    if sample:
+        elig = elig.sample(n=min(sample, len(elig)), random_state=0)
+    res = our_dp_capture(con, elig, N_S=N_S, verbose=verbose)
+    valid = res[res["our_dp_capture"].notna() & res["realized_capture"].notna()]
+    if len(valid):
+        wins = (valid["our_dp_capture"] > valid["realized_capture"]).mean()
+        pct = (valid["realized_capture"] < valid["our_dp_capture"].median()).mean()
+        print(f"\n=== Stage 7 — locate our policy ({len(valid)} assets) ===")
+        print(f"  our DP energy capture:   median {valid['our_dp_capture'].median():.0%}")
+        print(f"  realised energy capture: median {valid['realized_capture'].median():.0%}")
+        print(f"  our DP beats the real operator on {wins:.0%} of assets (energy, same node)")
+        print(f"  our DP median capture ranks at the ~{pct:.0%}th percentile of realised captures")
+    if LOCATE_CACHE:
+        res.to_parquet(LOCATE_CACHE)
+    return res
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--db", default=fw.DEFAULT_PATH)
     ap.add_argument("--phase-b", action="store_true", help="total revenue + AS + C1 (needs prices_mcpc_rt)")
+    ap.add_argument("--locate", type=int, nargs="?", const=0, default=None,
+                    help="locate our policy; optional int = sample size (0/omit value = full fleet)")
     a = ap.parse_args()
     con = fw.connect(a.db)
     print("warehouse:", fw.summary(con))
-    if a.phase_b:
+    if a.locate is not None:
+        locate_our_policy(con, sample=(a.locate or None))
+    elif a.phase_b:
         fleet_revenue(con)
     else:
         energy_cross_section(con)

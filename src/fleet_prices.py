@@ -43,6 +43,9 @@ def fetch_one_node(sp: str, date_from: str, date_to: str, page_size: int = 10000
         "deliveryDate": "date", "deliveryHour": "hour",
         "deliveryInterval": "interval", "settlementPointPrice": "price"})
     out = _to_ts15(df[["date", "hour", "interval", "price"]])
+    # ERCOT occasionally posts a price CORRECTION for an interval (same ts, two rows); keep the
+    # last so each node has unique timestamps (the DP feature builder requires a unique time index).
+    out = out.drop_duplicates("ts_15min", keep="last")
     out.insert(0, "settlement_point", sp)
     return out
 
