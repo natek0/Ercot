@@ -133,6 +133,18 @@ def test_manifest_resume_marks_done():
 # --------------------------------------------------------------------------- #
 #  Reconstruction — pure revenue functions
 # --------------------------------------------------------------------------- #
+def test_eligibility_rule_flags_and_reasons():
+    from src import stage7_run as s7
+    df = pd.DataFrame({
+        "resource_name": ["OK", "NONODE", "TINY", "ZERODUR", "TOOLONG"],
+        "settlement_point": ["A_RN", None, "B_RN", "C_RN", "D_RN"],
+        "hsl_mw": [10.0, 10.0, 0.2, 10.0, 10.0],
+        "duration_h": [2.0, 2.0, 2.0, 0.0, 50.0]})
+    r = s7.eligibility(df)
+    assert list(r) == ["eligible", "no_node", "power_too_small", "duration_lt_min", "duration_implausible"]
+    assert (r == "eligible").sum() == 1
+
+
 def test_da_energy_revenue():
     from src import stage7_run as s7
     assert s7.da_energy_revenue([5, 0, 2], [20, 30, 25]) == pytest.approx(5 * 20 + 2 * 25)

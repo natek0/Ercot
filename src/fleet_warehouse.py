@@ -143,6 +143,20 @@ def rebuild_dim_esr(con) -> int:
     return con.execute("SELECT count(*) FROM dim_esr").fetchone()[0]
 
 
+STATUS_FILE = "data/raw/stage7_status.txt"
+
+
+def write_status(text: str, path: str = STATUS_FILE) -> None:
+    """Overwrite a small plain-text progress file the long-running ingests update after each unit.
+    It lives outside the DuckDB file, so the owner can `cat` it any time WITHOUT touching the
+    single-writer-locked warehouse and without costing the assistant any context/tokens."""
+    import datetime
+    import os
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path, "w") as f:
+        f.write(text.rstrip() + f"\n\nupdated: {datetime.datetime.now().isoformat(timespec='seconds')}\n")
+
+
 def summary(con) -> dict:
     """Quick warehouse census for smoke-checks."""
     q = lambda s: con.execute(s).fetchone()[0]

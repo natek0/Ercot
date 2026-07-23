@@ -98,17 +98,34 @@ def realized_energy(con) -> pd.DataFrame:
     return con.execute(_REALIZED_ENERGY_SQL.format(dt=DT)).df()
 
 
+def eligibility(df: pd.DataFrame, min_duration=0.25, max_duration=12.0, min_hsl=0.5) -> pd.Series:
+    """Documented data-hygiene rule: which ESRs get a capture rate, and WHY the rest are excluded.
+    A capture ratio is only meaningful for a real battery with a node, a positive power, and a
+    plausible duration (MaxSOC/HSL). We drop: assets with no settlement point; HSL below `min_hsl`
+    MW (registration stubs / non-batteries); duration below `min_duration` h (degenerate 0-SOC
+    telemetry) or above `max_duration` h (implausible — a data error). Returns a reason per row
+    ('eligible' or the exclusion cause) so the writeup can REPORT the selection, not hide it."""
+    reason = pd.Series("eligible", index=df.index)
+    sp = df["settlement_point"].astype("string")
+    reason = reason.mask(sp.isna() | (sp.str.len() == 0), "no_node")
+    reason = reason.mask((reason == "eligible") & ~(df["hsl_mw"] > min_hsl), "power_too_small")
+    reason = reason.mask((reason == "eligible") & ~(df["duration_h"] >= min_duration), "duration_lt_min")
+    reason = reason.mask((reason == "eligible") & (df["duration_h"] > max_duration), "duration_implausible")
+    return reason
+
+
 def energy_cross_section(con, min_duration=0.25, c_deg=25.0, verbose=True) -> pd.DataFrame:
     """Per-asset realized energy revenue, PF energy ceiling, capture, and $/kW-month. Only assets
     with a node, a positive duration, and priced intervals get a ceiling/capture (§VIII.4: never a
     capture where the ceiling is ~0)."""
     df = realized_energy(con)
+    df["eligible_reason"] = eligibility(df, min_duration=min_duration)
     n_days = con.execute("SELECT count(DISTINCT CAST(ts_15min AS DATE)) FROM fact_sced_esr").fetchone()[0]
     months = max(n_days / 30.44, 1e-9)
 
     ceilings, gross_ceils = [], []
     for row in df.itertuples():
-        if not (row.settlement_point and row.duration_h and row.duration_h >= min_duration):
+        if row.eligible_reason != "eligible":              # documented hygiene rule (see eligibility)
             ceilings.append(np.nan); gross_ceils.append(np.nan); continue
         prices = con.execute("SELECT rt_lmp FROM prices_node WHERE settlement_point=? ORDER BY ts_15min",
                              [row.settlement_point]).df()["rt_lmp"].to_numpy(float)
@@ -128,6 +145,9 @@ def energy_cross_section(con, min_duration=0.25, c_deg=25.0, verbose=True) -> pd
 def _print_cross_section(df, n_days):
     valid = df[df["capture"].notna()]
     print(f"\n=== Stage 7 Phase A — energy cross-section ({len(df)} ESRs, {n_days} days) ===")
+    excl = df[df["eligible_reason"] != "eligible"]["eligible_reason"].value_counts().to_dict()
+    print(f"  eligible universe: {int((df['eligible_reason']=='eligible').sum())} of {len(df)} ESRs "
+          f"(excluded: {excl or 'none'})")
     print(f"  assets with a valid ceiling/capture: {len(valid)}")
     if len(valid):
         cap = valid["capture"]

@@ -45,16 +45,22 @@ def ingest_node_prices(date_from, date_to, path=fw.DEFAULT_PATH, nodes=None, ver
     done = {r[0] for r in con.execute("SELECT DISTINCT settlement_point FROM prices_node").fetchall()}
     todo = [n for n in nodes if n not in done]
     print(f"node prices: {len(nodes)} nodes, {len(todo)} to fetch, window [{date_from},{date_to}]")
+    done_n = len(done)
     ok = 0
     for i, sp in enumerate(todo):
         try:
             df = fetch_one_node(sp, date_from, date_to)
             n = fw.append(con, "prices_node", df)
-            ok += 1
+            ok += 1; done_n += 1
             if verbose and (i % 25 == 0 or n == 0):
-                print(f"  [{i+1}/{len(todo)}] {sp}: {n} rows")
+                print(f"  [{i+1}/{len(todo)}] {sp}: {n} rows", flush=True)
         except Exception as e:                              # noqa: BLE001
-            print(f"  {sp}: SKIP ({type(e).__name__}: {e})")
+            print(f"  {sp}: SKIP ({type(e).__name__}: {e})", flush=True)
+        if i % 10 == 0:
+            fw.write_status(f"Stage 7 NODE-PRICE ingest\n  nodes: {done_n}/{len(nodes)} fetched\n"
+                            f"  last: {sp}\n  in progress...")
+    fw.write_status(f"Stage 7 NODE-PRICE ingest\n  nodes: {done_n}/{len(nodes)} fetched\n"
+                    f"  >>> COMPLETE — next: python -m src.stage7_run")
     print(f"done: {ok}/{len(todo)} nodes fetched; "
           f"prices_node now {con.execute('SELECT count(*) FROM prices_node').fetchone()[0]:,} rows")
     con.close()
