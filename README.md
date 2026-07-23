@@ -24,20 +24,37 @@ what better forecasting and optimization compete for. The project builds that
 sequence — perfect-foresight LP ≥ dynamic program ≥ receding-horizon MPC ≥ naive
 baseline — and reads the shadow prices off it.
 
-## Status
+## Status — core study complete (Stages 0–5)
 
-**Stages 0–2 complete.** Stage 0 (viability) — qualified PROCEED. Stage 1 (data &
-oracle foundation). Stage 2 (MPC / first causal policy) — first value-of-foresight
-gap measured.
+All five core stages are done, verified, and adversarially reviewed. **The findings-first
+writeup is [`reports/stage5_writeup.md`](reports/stage5_writeup.md)** — start there.
 
-On the full post-launch window (HB_NORTH, 2025-12-05 → 2026-06-20, 18,885
-15-minute intervals), the RTC+B SOC-enforcement constraint binds and its shadow
-price is a **heavy-tailed scarcity price**: near zero in normal conditions (median
-~$0.02/MWh), spiking to $10–33/MWh on genuine scarcity days. Because
-perfect foresight positions the battery to dodge the constraint better than any
-real operator can, this is a *lower bound* — and the summer scarcity season is not
-yet in the data. Full numbers, verification checks, and caveats:
-[`reports/step0_results.md`](reports/step0_results.md).
+Headline findings on the full post-launch window (HB_NORTH, 2025-12-05 → 2026-06-20, 18,885
+15-minute intervals, 2 h battery, walk-forward / no lookahead):
+
+- **The value of foresight.** A clairvoyant controller captures 97% of the perfect-foresight
+  ceiling, so execution is nearly free — the whole difficulty is the *forecast*. The optimal
+  causal **dynamic program captures 34% of the matched-window ceiling ($2,364; 18% of the full
+  ceiling)** and turns the certainty-equivalent MPC's *loss* into a profit; that matched swing
+  (**+$2,020**) is the **option value of acting on the price *distribution* rather than a point
+  forecast**.
+- **Honest inference (§VIII.5).** On this thin, tail-concentrated window the DP's edge over a
+  *good* forecast-driven MPC is **not statistically separable from zero** — but the sign test
+  (46%, *p*=0.55) *understates* it, so a magnitude-aware permutation test is reported alongside
+  (one-sided *p*≈0.07: marginal, not a coin flip); the bootstrap CI on the edge straddles zero at
+  every block length, detectable only above ~54% of the ceiling vs an observed ~29%. It *does*
+  beat a *naive* forecast on 75% of days (*p*<0.001), and its profit is spike-concentrated —
+  **the top 5 of 140 days carry 114% of the net total**.
+- **Q2 — cost of RTC+B's SOC rule** ($\psi_{up}$): a heavy-tailed scarcity price, ~$0 normally,
+  with a bounded mean scarcity cost (**95% CI on the mean daily-max [$0.68, $2.63]/MWh**),
+  concentrated in a handful of days. On the single worst event the causal $\psi_{up}$ rises above
+  the clairvoyant bound (a real operator caught short pays more than one who saw it coming) — a
+  directional illustration, not a headline. Cheap on average, expensive exactly when scarcity hits.
+- **Q3 — marginal value of duration:** concave; causal capture rises from −3% (0.5 h) to a ~25%
+  plateau (8 h) — **duration buys forgiveness for forecast error**.
+
+Every headline carries a clairvoyant-ceiling/naive-floor bracket, a confidence interval, and a
+concentration statistic. Full detail and figures: [`reports/stage5_writeup.md`](reports/stage5_writeup.md).
 
 ## Repository layout
 
@@ -51,17 +68,31 @@ src/
                    SQL views; integrity assertions + timestamp-gap audit
   step0_lp.py      Stage 0 compatibility shim re-exporting src.oracle
   step0_run.py     regenerates every Stage 0 number from cached raw data
-  forecast.py      causal price forecasters (persistence, seasonal-naive, perfect)
-  policies.py      naive threshold floor + receding-horizon MPC (Stage 2)
+  forecast.py      causal price forecasters (persistence, seasonal-naive, perfect, learned GBT)
+  features.py      point-in-time feature pipeline; seasonal + residual construction
+  price_model.py   Stage 3 gradient-boosted quantile-regression conditional price distribution
+  markov.py        hour-indexed residual transition matrices (the DP kernel)
+  policies.py      naive floor, receding-horizon MPC, and the walk-forward DP policy
   backtest.py      walk-forward simulator; no-lookahead by construction
+  dp.py            Stage 4 periodic post-decision-state dynamic program + verification suite
+  reserves.py      reserve LP, MCPC pricing, the psi_up dual + its finite-difference validation
   stage2_run.py    value-of-foresight ladder + reserves + causal psi_up
-tests/             pytest verification suite (oracle, warehouse, ingest, Stage 2)
+  stage3_run.py    learned price model: pinball/CRPS/PIT scoring vs baselines
+  stage4_run.py    leak-free DP ladder, Q3 duration sweep, §V.26 prong, Q2 psi_up
+  stage5_stats.py  §VIII.5 inference: sign test, block bootstrap, concentration, jackknife, power
+  stage5_run.py    heavy leak-free orchestration → matched-window daily paired differences
+  figures.py       regenerate all writeup figures from the cache
+tests/             103-test pytest suite (oracle, warehouse, ingest, Stages 2–5)
                    — runs in CI with no ERCOT data
 .github/workflows/ci.yml   GitHub Actions: install + oracle self-test + pytest
 reports/
   step0_preregistration.md   parameters + kill condition, frozen before the run
   step0_results.md           Stage 0 diagnostics, gate verdict, verification checks
-  stage1_notes.md            Stage 1 build record (warehouse, oracle, tests, decisions)
+  stage1_notes.md … stage4_notes.md   per-stage build records + adversarial-review outcomes
+  stage4_decisions.md        Stage 4 decisions, rationale, self-critique
+  stage5_notes.md            Stage 5 statistical-inference detail
+  stage5_writeup.md          THE findings-first writeup — start here
+  figures/                   the six writeup figures (regenerable)
 docs/
   ERCOT_Battery_Dispatch_Plan_v2.md   full plan: derivations, decisions, execution stages
   step0_spec.md                       Stage 0 build contract
@@ -106,26 +137,38 @@ python -m src.stage2_run --full   # full post-launch window (~15 min)
 
 A receding-horizon MPC (re-optimising every 15 min against a forecast) is walked
 forward with no lookahead against a perfect-foresight ceiling and a naive floor.
-Over the full window at 2 h, the **value of foresight is $16,660**, and it is 98%
-**forecast-error cost**: with a perfect forecast the same controller captures 97%
-of the ceiling, but a naive same-hour-last-week forecast turns a $13k opportunity
-into a loss — the gap that Stages 3–4 exist to close. Reserves (co-optimised) add
-a steady +$2,919 "safe carry." Full detail:
-[`reports/stage2_notes.md`](reports/stage2_notes.md).
+With a perfect forecast the controller captures 97% of the ceiling, but a naive
+same-hour-last-week forecast turns the opportunity into a loss — the gap that
+Stages 3–4 exist to close. Full detail: [`reports/stage2_notes.md`](reports/stage2_notes.md).
+
+## Stages 3–5 — learned model, dynamic program, and the statistics
+
+```bash
+python -m src.stage3_run --full   # learned price distribution: pinball / CRPS / PIT vs baselines
+python -m src.stage4_run --full   # leak-free DP ladder, Q3 duration sweep, §V.26 prong, Q2 psi_up
+python -m src.stage5_run --rebuild # §VIII.5 inference (~12 min); then figures
+python -m src.figures             # regenerate the six writeup figures from the cache
+```
+
+Stage 3 learns a gradient-boosted quantile-regression conditional price distribution
+(it wins held-out CRPS but — a reported negative result — that does *not* translate into
+separably better *decisions*). Stage 4 solves the periodic dynamic program that is the
+project's centrepiece and reads off Q2/Q3. Stage 5 turns the point estimates into defensible
+inference. **The synthesis is [`reports/stage5_writeup.md`](reports/stage5_writeup.md).**
 
 ## Roadmap (stages)
 
-| Stage | Delivers |
-|---|---|
-| 0 — Viability | Perfect-foresight LP, gate, reframe ✅ |
-| 1 — Data & oracle foundation | DuckDB/SQL warehouse, LP oracle w/ boundary conditions, tests + CI ✅ |
-| 2 — MPC / first causal policy | Receding-horizon MPC + reserves → first value-of-foresight gap ✅ |
-| 3 — Learned price model | Quantile-regression conditional distribution, calibration |
-| 4 — Dynamic program | Optimal causal policy → Q2 (psi_up), Q3 (duration curves) |
-| 5 — Statistics & writeup | Walk-forward protocol, sign test, power statement |
+| Stage | Delivers | |
+|---|---|---|
+| 0 — Viability | Perfect-foresight LP, gate, reframe | ✅ |
+| 1 — Data & oracle foundation | DuckDB/SQL warehouse, LP oracle w/ boundary conditions, tests + CI | ✅ |
+| 2 — MPC / first causal policy | Receding-horizon MPC + reserves → first value-of-foresight gap | ✅ |
+| 3 — Learned price model | Quantile-regression conditional distribution, calibration | ✅ |
+| 4 — Dynamic program | Optimal causal policy → Q2 (psi_up), Q3 (duration curves) | ✅ |
+| 5 — Statistics & writeup | Walk-forward protocol, sign test, power statement, findings-first writeup | ✅ |
 
-Stages 6–9 (residential-fleet chapter, fleet benchmark, risk/hedging, RL exhibit)
-are optional add-ons.
+**Stages 0–5 constitute the complete, defensible study.** Stages 6–9 (residential-fleet
+chapter, ~300-asset fleet benchmark, risk/hedging, RL exhibit) are optional add-ons.
 
 ## Method notes
 

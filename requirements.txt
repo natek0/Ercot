@@ -23,3 +23,8 @@ pytest==9.1.1            # verification suite as tests (run in CI)
 # Added in Stage 3 (learned conditional price distribution)
 scikit-learn==1.7.2      # gradient-boosted-tree quantile regression (pinball loss),
                          # isotonic rearrangement; prebuilt wheel, needs only numpy/scipy
+
+# Added in Stage 5 (statistical inference + figures)
+scipy==1.18.0            # exact binomial sign test, normal quantiles (power statement)
+matplotlib==3.11.1       # publication figures (value-of-foresight ladder, duration curves,
+                         # concentration, bootstrap CI, psi_up tail, sign-test histogram)
