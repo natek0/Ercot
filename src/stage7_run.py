@@ -19,13 +19,18 @@ Runs AFTER src.disclosure_ingest and src.fleet_prices have populated the warehou
 from __future__ import annotations
 
 import argparse
+import os
+import warnings
 
 import numpy as np
 import pandas as pd
 
 from src import fleet_warehouse as fw
 
+warnings.filterwarnings("ignore", message="overflow encountered in reduce")  # benign numpy reduce
+
 DT = 0.25  # hours per 15-min interval
+CACHE = "data/raw/stage7_energy_cross_section.parquet"  # persist the ~300 ceiling LP solves
 
 
 # --------------------------------------------------------------------------- #
@@ -114,10 +119,17 @@ def eligibility(df: pd.DataFrame, min_duration=0.25, max_duration=12.0, min_hsl=
     return reason
 
 
-def energy_cross_section(con, min_duration=0.25, c_deg=25.0, verbose=True) -> pd.DataFrame:
+def energy_cross_section(con, min_duration=0.25, c_deg=25.0, verbose=True,
+                         cache_path=CACHE, use_cache=False) -> pd.DataFrame:
     """Per-asset realized energy revenue, PF energy ceiling, capture, and $/kW-month. Only assets
     with a node, a positive duration, and priced intervals get a ceiling/capture (§VIII.4: never a
-    capture where the ceiling is ~0)."""
+    capture where the ceiling is ~0). Result is cached (the ~300 ceiling LP solves are the cost);
+    use_cache=True loads it instead of re-solving."""
+    if use_cache and cache_path and os.path.exists(cache_path):
+        df = pd.read_parquet(cache_path)
+        if verbose:
+            _print_cross_section(df, int(df["n_days"].iloc[0]))
+        return df
     df = realized_energy(con)
     df["eligible_reason"] = eligibility(df, min_duration=min_duration)
     n_days = con.execute("SELECT count(DISTINCT CAST(ts_15min AS DATE)) FROM fact_sced_esr").fetchone()[0]
@@ -135,8 +147,10 @@ def energy_cross_section(con, min_duration=0.25, c_deg=25.0, verbose=True) -> pd
     df["ceiling_gross"] = gross_ceils
     df["capture"] = df["realized_energy_rev"] / df["ceiling_gross"].where(df["ceiling_gross"] > 1.0)
     df["realized_kw_month"] = df["realized_energy_rev"] / (df["hsl_mw"] * 1000.0) / months
-    df.attrs["n_days"] = n_days
-    df.attrs["months"] = months
+    df["n_days"] = n_days
+    if cache_path:
+        os.makedirs(os.path.dirname(cache_path) or ".", exist_ok=True)
+        df.to_parquet(cache_path)
     if verbose:
         _print_cross_section(df, n_days)
     return df
