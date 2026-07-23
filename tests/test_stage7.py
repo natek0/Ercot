@@ -9,6 +9,7 @@ name bug (PRAGMA table_info row[0] is the column id, not the name) found during 
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -127,3 +128,63 @@ def test_manifest_resume_marks_done():
     assert not fw.is_done(con, 123)
     fw.mark(con, 123, "NP3-965-ER", pd.Timestamp("2026-05-24").date(), 100, "done", "now")
     assert fw.is_done(con, 123)
+
+
+# --------------------------------------------------------------------------- #
+#  Reconstruction — pure revenue functions
+# --------------------------------------------------------------------------- #
+def test_da_energy_revenue():
+    from src import stage7_run as s7
+    assert s7.da_energy_revenue([5, 0, 2], [20, 30, 25]) == pytest.approx(5 * 20 + 2 * 25)
+
+
+def test_rt_deviation_revenue_charging_is_a_cost():
+    from src import stage7_run as s7
+    # discharge 2 MW above the 0 DA position at $50 for one 15-min interval → +$25
+    assert s7.rt_deviation_revenue([2], [0], [50]) == pytest.approx(2 * 50 * 0.25)
+    # charging 4 MW (telem -4) below a 0 position at $50 → a purchase, negative revenue
+    assert s7.rt_deviation_revenue([-4], [0], [50]) == pytest.approx(-4 * 50 * 0.25)
+    # exactly on the DA schedule → zero RT deviation regardless of RT price
+    assert s7.rt_deviation_revenue([5, 5], [5, 5], [999, -80]) == pytest.approx(0.0)
+
+
+def test_gross_revenue_from_dispatch():
+    from src import stage7_run as s7
+    # discharge 1 MW at $100, charge 1 MW at $10, per 15-min → (100-10)*0.25
+    assert s7.gross_revenue_from_dispatch([100, 10], c=[0, 1], d=[1, 0]) == pytest.approx((100 - 10) * 0.25)
+
+
+def test_asset_energy_ceiling_captures_a_spread():
+    from src import stage7_run as s7
+    # alternating cheap/expensive prices → a 1h/10MW battery must earn positive gross, and net<=gross
+    prices = np.tile([5.0, 80.0], 48)     # one day of 15-min
+    obj, gross = s7.asset_energy_ceiling(prices, hsl=10.0, maxsoc=10.0, c_deg=25.0)
+    assert gross > 0 and obj <= gross + 1e-6
+    # degenerate assets return NaN, not a crash
+    z_obj, z_gross = s7.asset_energy_ceiling(prices, hsl=0.0, maxsoc=0.0)
+    assert np.isnan(z_obj) and np.isnan(z_gross)
+
+
+# --------------------------------------------------------------------------- #
+#  Reconstruction — the two-settlement SQL join (the riskiest logic)
+# --------------------------------------------------------------------------- #
+def test_realized_energy_two_settlement_sql():
+    """One battery, one hour (HE1 = 4 intervals). DA award 5 MW @ $20; actual output 10 MW; RT LMP
+    $40. Expected: DA = 5*20 = $100; RT deviation = (10-5)*40*0.25*4 = $200; total = $300. This pins
+    the hour-ending↔15-min join and the two-settlement arithmetic."""
+    from src import stage7_run as s7
+    con = fw.connect(":memory:")
+    ts = [pd.Timestamp("2026-05-24 00:00") + pd.Timedelta(minutes=int(15 * k)) for k in range(4)]
+    fw.append(con, "dim_esr", pd.DataFrame({"resource_name": ["Z_ESR1"], "settlement_point": ["Z_RN"],
+        "hsl_mw": [10.0], "max_soc_mwh": [20.0], "min_soc_mwh": [0.0], "duration_h": [2.0]}))
+    fw.append(con, "fact_sced_esr", pd.DataFrame({"resource_name": ["Z_ESR1"] * 4, "ts_15min": ts,
+        "telem_output_mw": [10.0] * 4, "soc_mwh": [5.0] * 4}))
+    fw.append(con, "prices_node", pd.DataFrame({"settlement_point": ["Z_RN"] * 4, "ts_15min": ts,
+        "rt_lmp": [40.0] * 4}))
+    fw.append(con, "fact_dam_esr", pd.DataFrame({"resource_name": ["Z_ESR1"],
+        "delivery_date": [pd.Timestamp("2026-05-24").date()], "hour_ending": [1],
+        "da_energy_award_mw": [5.0], "settlement_point": ["Z_RN"], "da_spp": [20.0]}))
+    r = s7.realized_energy(con).iloc[0]
+    assert r.da_energy_rev == pytest.approx(100.0)
+    assert r.rt_dev_rev == pytest.approx(200.0)
+    assert r.realized_energy_rev == pytest.approx(300.0)

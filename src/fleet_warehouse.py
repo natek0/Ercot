@@ -63,6 +63,13 @@ CREATE TABLE IF NOT EXISTS dim_esr (
     duration_h       DOUBLE
 );
 
+-- real-time settlement-point (node) prices, 15-min, for the ESR universe's nodes
+CREATE TABLE IF NOT EXISTS prices_node (
+    settlement_point VARCHAR,
+    ts_15min         TIMESTAMP,
+    rt_lmp           DOUBLE
+);
+
 -- resume bookkeeping: one row per downloaded archive bundle
 CREATE TABLE IF NOT EXISTS manifest (
     docid         BIGINT,
