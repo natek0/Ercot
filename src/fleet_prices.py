@@ -16,8 +16,8 @@ import argparse
 
 import pandas as pd
 
+from src import ercot_api as api
 from src import fleet_warehouse as fw
-from src import ingest
 
 
 def _to_ts15(df: pd.DataFrame) -> pd.DataFrame:
@@ -28,10 +28,21 @@ def _to_ts15(df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame({"ts_15min": ts, "rt_lmp": df["price"].astype(float)})
 
 
-def fetch_one_node(sp: str, date_from: str, date_to: str) -> pd.DataFrame:
-    """Node RT price series for one settlement point → (settlement_point, ts_15min, rt_lmp)."""
-    df = ingest.fetch_energy(date_from, date_to, settlement_point=sp, cache=False)
-    out = _to_ts15(df)
+def fetch_one_node(sp: str, date_from: str, date_to: str, page_size: int = 100000) -> pd.DataFrame:
+    """Node RT price series for one settlement point → (settlement_point, ts_15min, rt_lmp).
+    Uses a LARGE page size so the whole window arrives in one request (a full window is ~16k rows),
+    which keeps us far under ERCOT's per-request rate limit — the default 1000-row paging turned one
+    node into ~17 requests and exhausted the quota."""
+    body = api.get_report(
+        "/np6-905-cd/spp_node_zone_hub",
+        {"deliveryDateFrom": date_from, "deliveryDateTo": date_to, "settlementPoint": sp},
+        page_size=page_size,
+    )
+    cols = [f["name"] for f in body["fields"]]
+    df = pd.DataFrame(body["data"], columns=cols).rename(columns={
+        "deliveryDate": "date", "deliveryHour": "hour",
+        "deliveryInterval": "interval", "settlementPointPrice": "price"})
+    out = _to_ts15(df[["date", "hour", "interval", "price"]])
     out.insert(0, "settlement_point", sp)
     return out
 
@@ -59,6 +70,7 @@ def ingest_node_prices(date_from, date_to, path=fw.DEFAULT_PATH, nodes=None, ver
         if i % 10 == 0:
             fw.write_status(f"Stage 7 NODE-PRICE ingest\n  nodes: {done_n}/{len(nodes)} fetched\n"
                             f"  last: {sp}\n  in progress...")
+        __import__("time").sleep(0.25)                     # proactive pacing under the rate limit
     fw.write_status(f"Stage 7 NODE-PRICE ingest\n  nodes: {done_n}/{len(nodes)} fetched\n"
                     f"  >>> COMPLETE — next: python -m src.stage7_run")
     print(f"done: {ok}/{len(todo)} nodes fetched; "

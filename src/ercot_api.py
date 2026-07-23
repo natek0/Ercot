@@ -94,22 +94,30 @@ def _current_token() -> str:
     return _TOKEN_CACHE["token"]
 
 
-def request(path: str, params: dict | None = None) -> requests.Response:
+def request(path: str, params: dict | None = None, max_429: int = 6) -> requests.Response:
     """GET a single page from the public-reports API.
 
     `path` is everything after BASE_URL, e.g. "/np6-905-cd/spp_node_zone_hub".
     Handles the id_token/access_token ambiguity by retrying once with the
-    access_token on a 401.
+    access_token on a 401, and honours ERCOT's rate limit: on a 429 it sleeps the
+    cooldown ERCOT reports ("Try again in N seconds") and retries.
     """
+    import re
     url = BASE_URL + path
     headers = {
         "Authorization": f"Bearer {_current_token()}",
         "Ocp-Apim-Subscription-Key": PUBLIC_KEY,
     }
-    resp = requests.get(url, headers=headers, params=params or {}, timeout=120)
-    if resp.status_code == 401 and _ACCESS_TOKEN:
-        headers["Authorization"] = f"Bearer {_ACCESS_TOKEN}"
+    for _ in range(max_429 + 1):
         resp = requests.get(url, headers=headers, params=params or {}, timeout=120)
+        if resp.status_code == 401 and _ACCESS_TOKEN:
+            headers["Authorization"] = f"Bearer {_ACCESS_TOKEN}"
+            resp = requests.get(url, headers=headers, params=params or {}, timeout=120)
+        if resp.status_code == 429:
+            m = re.search(r"(\d+)\s*second", resp.text)
+            time.sleep(min((int(m.group(1)) + 2) if m else 15, 60))
+            continue
+        return resp
     return resp
 
 
