@@ -78,13 +78,37 @@ def ingest_node_prices(date_from, date_to, path=fw.DEFAULT_PATH, nodes=None, ver
     con.close()
 
 
+def load_rt_mcpc(date_from, date_to, path=fw.DEFAULT_PATH):
+    """Load the system-wide RT AS clearing prices (NP6-331, already cached for Stage 0) into
+    prices_mcpc_rt over the window. AS clears system-wide (no locational component), so one series
+    serves every ESR. Reuses src.ingest.fetch_mcpc so it stays a single source of truth."""
+    from src import ingest
+    m = ingest.fetch_mcpc()                               # wide: date,hour,interval,ECRS,NSPIN,REGDN,REGUP,RRS
+    ts = (pd.to_datetime(m["date"]) + pd.to_timedelta(m["hour"].astype(int) - 1, unit="h")
+          + pd.to_timedelta((m["interval"].astype(int) - 1) * 15, unit="m"))
+    df = pd.DataFrame({"ts_15min": ts, "mcpc_regup": m["REGUP"].astype(float),
+                       "mcpc_regdn": m["REGDN"].astype(float), "mcpc_rrs": m["RRS"].astype(float),
+                       "mcpc_ecrs": m["ECRS"].astype(float), "mcpc_nspin": m["NSPIN"].astype(float)})
+    df = df[(df["ts_15min"] >= pd.Timestamp(date_from)) & (df["ts_15min"] < pd.Timestamp(date_to) + pd.Timedelta(days=1))]
+    con = fw.connect(path)
+    con.execute("DELETE FROM prices_mcpc_rt")
+    fw.append(con, "prices_mcpc_rt", df)
+    n = con.execute("SELECT count(*) FROM prices_mcpc_rt").fetchone()[0]
+    print(f"loaded prices_mcpc_rt: {n:,} rows [{date_from}..{date_to}]")
+    con.close()
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--from", dest="date_from", required=True)
     ap.add_argument("--to", dest="date_to", required=True)
     ap.add_argument("--db", default=fw.DEFAULT_PATH)
+    ap.add_argument("--mcpc", action="store_true", help="load RT MCPC instead of node prices")
     a = ap.parse_args()
-    ingest_node_prices(a.date_from, a.date_to, path=a.db)
+    if a.mcpc:
+        load_rt_mcpc(a.date_from, a.date_to, path=a.db)
+    else:
+        ingest_node_prices(a.date_from, a.date_to, path=a.db)
 
 
 if __name__ == "__main__":

@@ -70,6 +70,12 @@ CREATE TABLE IF NOT EXISTS prices_node (
     rt_lmp           DOUBLE
 );
 
+-- real-time AS clearing prices (MCPC), system-wide, 15-min (from NP6-331, reused from Stage 0)
+CREATE TABLE IF NOT EXISTS prices_mcpc_rt (
+    ts_15min  TIMESTAMP,
+    mcpc_regup DOUBLE, mcpc_regdn DOUBLE, mcpc_rrs DOUBLE, mcpc_ecrs DOUBLE, mcpc_nspin DOUBLE
+);
+
 -- resume bookkeeping: one row per downloaded archive bundle
 CREATE TABLE IF NOT EXISTS manifest (
     docid         BIGINT,

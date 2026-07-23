@@ -200,3 +200,33 @@ def test_realized_energy_two_settlement_sql():
     assert r.da_energy_rev == pytest.approx(100.0)
     assert r.rt_dev_rev == pytest.approx(200.0)
     assert r.realized_energy_rev == pytest.approx(300.0)
+
+
+def test_as_capacity_revenue():
+    from src import stage7_run as s7
+    assert s7.as_capacity_revenue([5, 2], [3, 10], dt=1.0) == pytest.approx(5 * 3 + 2 * 10)
+    assert s7.as_capacity_revenue([8], [10], dt=0.25) == pytest.approx(8 * 10 * 0.25)
+
+
+def test_as_revenue_two_settlement_sql():
+    """One battery, HE1 (4 intervals), NonSpin only. DA award 5 MW @ DA MCPC $3 → DA AS = $15.
+    RT award 8 MW @ RT MCPC $10 → rt_as_total = 8*10*0.25*4 = $80; two-settlement deviation =
+    (8-5)*10*0.25*4 = $30; total AS (two-settlement) = 15 + 30 = $45. Pins the AS DA/RT join."""
+    from src import stage7_run as s7
+    con = fw.connect(":memory:")
+    ts = [pd.Timestamp("2026-05-24 00:00") + pd.Timedelta(minutes=int(15 * k)) for k in range(4)]
+    fw.append(con, "dim_esr", pd.DataFrame({"resource_name": ["Z_ESR1"], "settlement_point": ["Z_RN"],
+        "hsl_mw": [10.0], "max_soc_mwh": [20.0], "min_soc_mwh": [0.0], "duration_h": [2.0]}))
+    fw.append(con, "fact_sced_esr", pd.DataFrame({"resource_name": ["Z_ESR1"] * 4, "ts_15min": ts,
+        "telem_output_mw": [0.0] * 4, "soc_mwh": [10.0] * 4, "as_nspin_mw": [8.0] * 4,
+        "as_regup_mw": [0.0] * 4, "as_regdn_mw": [0.0] * 4, "as_rrs_mw": [0.0] * 4, "as_ecrs_mw": [0.0] * 4}))
+    fw.append(con, "prices_mcpc_rt", pd.DataFrame({"ts_15min": ts, "mcpc_nspin": [10.0] * 4,
+        "mcpc_regup": [0.0] * 4, "mcpc_regdn": [0.0] * 4, "mcpc_rrs": [0.0] * 4, "mcpc_ecrs": [0.0] * 4}))
+    fw.append(con, "fact_dam_esr", pd.DataFrame({"resource_name": ["Z_ESR1"],
+        "delivery_date": [pd.Timestamp("2026-05-24").date()], "hour_ending": [1],
+        "da_nspin_mw": [5.0], "da_nspin_mcpc": [3.0]}))
+    r = s7.as_revenue(con).iloc[0]
+    assert r.da_as_rev == pytest.approx(15.0)
+    assert r.rt_as_total == pytest.approx(80.0)
+    assert r.rt_as_incr == pytest.approx(30.0)
+    assert r.as_rev_twosettle == pytest.approx(45.0)
