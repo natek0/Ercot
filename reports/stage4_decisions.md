@@ -87,7 +87,26 @@ Recorded so the agents' findings can be cross-checked, and nothing is hidden:
 - **§IV.11 duration identity** is validated for the RESERVE LP ψ_up (C1), but the full DP-level
   dV/dE_max = Σ(λ̄+ψ_dn) identity is not separately run (the oracle validates the energy-side).
 
-## Refinements (named, not blocking)
+## Three-agent review — verdict and resolutions (applied)
+
+A three-agent adversarial review + synthesizer returned **GO WITH FIXES, no blockers** (the
+2h leak-free headline is trustworthy; DP core formally correct — reserve dual sign/units right,
+no factor-of-4; leak-free confirmed by an independent scramble test). Fixes APPLIED:
+Q3 grid-scaling (ΔS-constant); dual-denominator capture (18% full / 34% matched) + a bootstrap
+95% CI that **straddles zero** ($[-263, 5666]$ → edge not separable from 0, the honest framing);
+§V.26 downgraded to "empirical ≈ learned" (sign flips at n_bins=10); Q2 **interval-MCPC tail at
+the executed SOC** (max \$40.96 > Stage 0 \$32.75 → Decision 19 confirmed in the tail); pooled
+seasonal; K-step over-persistence fix; reserve E-grid refined near 0; do-nothing floor row;
+WalkForwardDPPolicy scramble test; z walk-forward test (only +\$120 realised, not the +10%
+in-model → $(h,b)$ stands). Statistical items (sign test, matched-window MPC, concentration
+decomposition, block-length sensitivity) recorded in the plan's Stage 5 section.
+
+**Cross-check (my self-critique vs the agents):** the agents caught two I got wrong — the
+warm-up *direction* (I noted it but concluded backwards) and the §V.26 fragility (I wrote
+"survives"). I caught two they missed — the rep-weekday seasonal (now fixed: pooled) and the
+z-augmentation being in-sample (now tested walk-forward). No item went unaddressed.
+
+## Refinements (still open, named, non-blocking)
 
 Interval MCPC for the ψ_up tail; fully-joint reserve concavity; (h,b,z) walk-forward; NWP
 features + summer data; c_deg∈[0,60] sensitivity; pre/post-RTC+B duration natural experiment;

@@ -7,6 +7,35 @@ is now re-fit walk-forward per fold (was a full-window in-sample kernel that inf
 proxy), validated by the §IV.11-style C1 identity. **The corrected headline numbers are
 materially lower and more honest than the first cut — see below.**
 
+## POST-REVIEW CORRECTED NUMBERS (three-agent + synthesizer review — supersede the tables below)
+
+A three-agent adversarial review (`reports/stage4_decisions.md` has the change list) returned
+**GO WITH FIXES, no blockers**; the fixes are now applied. Corrected figures (full window, 2h):
+
+- **Ladder:** $V^{\text{DP}} = \$2,364$ — **18% of ceiling (full window)**, **34% on the matched
+  traded window** (post the 2-month warm-up; ceiling there is \$6,972). The stationary
+  block-bootstrap **95% CI on $V^{\text{DP}}$ is $[-\$263,\,\$5{,}666]$ — it STRADDLES ZERO:**
+  on this thin, tail-concentrated window the DP's edge is not statistically separable from zero
+  (the §VIII.5 point; this is the honest headline framing, not the point estimate). Option value
+  vs the learned MPC $= +\$2{,}667$ but **inflated** (the MPC ate warm-up losses the DP skipped;
+  a matched-window MPC recompute is a Stage 5 item). Do-nothing floor $=\$0$.
+- **Q3 (grid-corrected, ΔS-constant ~100 nodes/h):** capture $-3\%$ (0.5h, loses to inaction),
+  $6\%,18\%,21\%,23\%,25\%,25\%$ (1→8h). The old fixed-$N_S$=200 curve was grid-depressed ~12.5%
+  at 8h; the "plateau"/collapsing marginal-value was partly a grid artifact — now corrected.
+- **§V.26 (n_bins sweep):** empirical vs learned $V^{\text{DP}}$: nb10 $1977<2211$ (learned wins),
+  nb12 $2364>2089$, nb14 $2416>2152$. The sign FLIPS at nb=10; the ~\$190/1.4pp margin is within
+  the discretisation swing. **Downgraded from "adopt empirical, confirmed" to "empirical ≈ learned,
+  marginally ahead at the default bins; not separable without Stage-5 CIs."**
+- **Q2 $\psi^{\text{up}}$ (C1 validation 5/5):** hour-mean-MCPC median sensitivity over $\rho_k$
+  (median \$0.020 at $\rho=0$ → 0 as $\rho$ rises). **The TAIL, from realised INTERVAL MCPC at the
+  EXECUTED SOC ($\rho=0.05$): p99 \$0.90, max \$40.96** — which now **EXCEEDS Stage 0's clairvoyant
+  max \$32.75, confirming Decision 19 in the scarcity tail** (a causal operator caught short during
+  a real spike faces a higher $\psi^{\text{up}}$ than a clairvoyant). B2's hour-mean had smoothed
+  this away (max \$1.10); interval MCPC restores it. The median-vs-floor "validation" remains
+  razor-thin and $\rho=0$-only, but the tail — the economically load-bearing part — is now the story.
+- **State $(h,b,z)$ walk-forward:** adds only ~\$120 (~+1pp) realised, far below the in-model +10%
+  (which was overfit-inflated) → minimal $(h,b)$ stands; $z$ is a marginal enhancement at best.
+
 ## The two fixes and why they mattered
 
 1. **Walk-forward kernel (Q1 / §VIII.3).** The DP's transition kernel, seasonal, bin
