@@ -40,12 +40,16 @@ ceiling), publish the capture distribution, and locate our modelled Stage-4 DP w
 >   fresh fetch returns the same partial data — <1% of $, documented); a fleet-capture distribution
 >   figure. **ECRSMD (A/M4): REFUTED** — the raw DAM file has only `ECRSSD Awarded`; the parser is
 >   correct and complete.
-> - **Locate-our-policy (the pivotal must-fix):** re-run **FAIR** — gross-vs-gross, matched
->   post-warm-up window (Feb-1+), ceiling on that same window. The synthesizer's 40-asset recompute
->   landed at **~32% capture / ~30th percentile** (the shipped **10% / 14th was ~2x inflated** by a
->   net-vs-gross + warm-up-vs-full-window confound). **The "our DP is information-limited" conclusion
->   SURVIVES** (still below the fleet median, not near the bottom); the full-fleet fair number is being
->   recomputed. §8 below is the ORIGINAL self-critique; these Round-2 fixes address items 1-6, 8.
+> - **Locate-our-policy (the pivotal must-fix) — FULL-FLEET FAIR RESULT:** re-run gross-vs-gross,
+>   matched post-warm-up window (Feb-1+), ceiling on that same window (302 assets): **our DP median
+>   energy capture 31% vs the fleet's matched-window 40%; our DP beats 28% of operators and ranks at
+>   the ~29th percentile** (the shipped **10% / 14th was ~2x inflated** by a net-vs-gross +
+>   warm-up-vs-full-window confound; the fair number matches the synthesizer's 40-asset ~32%/30th).
+>   **The "our DP is information-limited" conclusion SURVIVES** — our price-only DP sits *below* the
+>   fleet median but *not* near the bottom, and read against the fleet's **76% joint** capture the gap
+>   is squarely an exogenous-information limit (no NWP/load/co-located-gen), confirming the Stage-5
+>   thesis externally. Figure: `reports/figures/fig7_fleet_capture.png`. §8 below is the ORIGINAL
+>   self-critique; these Round-2 fixes resolve items 1-6 and 8.
 
 ---
 

@@ -227,7 +227,11 @@ def fig_fleet_capture(path):
     xs = pd.read_parquet("data/raw/stage7_energy_cross_section.parquet")
     xs = xs[xs["capture"].notna()]
     real = xs["capture"].to_numpy() * 100
-    joint = xs["joint_capture"].dropna().to_numpy() * 100 if "joint_capture" in xs else None
+    joint = None
+    if os.path.exists("data/raw/stage7_joint_capture.parquet"):
+        j = pd.read_parquet("data/raw/stage7_joint_capture.parquet")
+        if "joint_capture" in j:
+            joint = j["joint_capture"].dropna().to_numpy() * 100
     loc = pd.read_parquet("data/raw/stage7_locate_policy.parquet") if os.path.exists(
         "data/raw/stage7_locate_policy.parquet") else None
     fig, ax = plt.subplots(figsize=(8.4, 4.6))
