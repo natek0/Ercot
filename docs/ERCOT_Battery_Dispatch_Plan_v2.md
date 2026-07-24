@@ -1640,7 +1640,24 @@ decisions that Stage 4 must honour. Recorded here so they are not lost between s
 
 ---
 
-## STAGE 7 — Fleet benchmark from 60-day disclosure *(optional add-on)*
+## STAGE 7 — Fleet benchmark from 60-day disclosure *(optional add-on)* — ✅ COMPLETE
+
+**STATUS: COMPLETE & adversarially reviewed** (findings: `reports/stage7_writeup.md`; record:
+`reports/stage7_notes.md`; three-agent review + synthesis: `reports/stage7_review_*.md`).
+Reconstructed the realized revenue of 327 ESRs (302 eligible) over 2025-12-05 → 2026-05-24 from
+public 60-day SCED/DAM disclosure (stream-and-discard into DuckDB; verified to the dollar, no join
+fan-out). **Results:** fleet total $186.6M ($1.74/kW-month, 29% ancillary); **C1** tracks Modo's
+published *monthly* shape (Jan≫Apr>Feb) with a systematic **~20% level shortfall** (reported, not
+hidden); the fleet is **well-run** — median **76%** capture of the energy+ancillary ceiling (CI
+71-81%), while the energy-only 34% reflects rational joint-optimization (holding SOC for ancillary),
+not skill; **locate-our-policy (fair: gross, matched post-warm-up window, matched ceiling):** our
+price-only DP captures a median **31%** of the energy ceiling and ranks at the **~29th percentile**,
+below the fleet median but not the bottom — confirming the Stage-5 exogenous-information thesis
+externally against ~300 real batteries. A three-agent review corrected two overstated comparative
+claims (the shipped 10%/14th-pct locate was ~2x confounded; the C1 band was too lax) — de-confounded,
+not spun. The original spec follows for the record.
+
+
 
 **What.** Reconstruct realised revenue per ESR from disclosure data; compute each asset's perfect-foresight ceiling at its own power and duration; publish the cross-sectional distribution of capture rates across the ~297 ESRs that settled revenue; locate the modelled policy within it; decompose the shortfall into forecast error, energy/ancillary allocation, and SOC management.
 

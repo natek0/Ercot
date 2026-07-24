@@ -56,6 +56,15 @@ Headline findings on the full post-launch window (HB_NORTH, 2025-12-05 → 2026-
 Every headline carries a clairvoyant-ceiling/naive-floor bracket, a confidence interval, and a
 concentration statistic. Full detail and figures: [`reports/stage5_writeup.md`](reports/stage5_writeup.md).
 
+- **Fleet benchmark (Stage 7, add-on).** Reconstructed the realized revenue of **~300 real ERCOT
+  batteries** from public 60-day disclosure ($186.6M total; reproduced to the dollar in an
+  independent audit), validated against **Modo's published monthly benchmark** (shape matches, level
+  ~20% light — reported, not hidden), and found the fleet is **well-run** (median **76%** capture of
+  the energy+ancillary ceiling). Our information-limited price-only DP, compared *fairly*, captures
+  **31%** of the energy ceiling and ranks at the **~29th percentile** — below the fleet median but
+  not the bottom, confirming *against ~300 real assets* that the binding constraint is exogenous
+  information, not the optimizer. Findings: [`reports/stage7_writeup.md`](reports/stage7_writeup.md).
+
 ## Repository layout
 
 ```
@@ -82,7 +91,8 @@ src/
   stage5_stats.py  §VIII.5 inference: sign test, block bootstrap, concentration, jackknife, power
   stage5_run.py    heavy leak-free orchestration → matched-window daily paired differences
   figures.py       regenerate all writeup figures from the cache
-tests/             103-test pytest suite (oracle, warehouse, ingest, Stages 2–5)
+  disclosure_ingest.py fleet_warehouse.py fleet_prices.py stage7_run.py  Stage 7 fleet benchmark
+tests/             117-test pytest suite (oracle, warehouse, ingest, Stages 2–5, 7)
                    — runs in CI with no ERCOT data
 .github/workflows/ci.yml   GitHub Actions: install + oracle self-test + pytest
 reports/
@@ -91,8 +101,9 @@ reports/
   stage1_notes.md … stage4_notes.md   per-stage build records + adversarial-review outcomes
   stage4_decisions.md        Stage 4 decisions, rationale, self-critique
   stage5_notes.md            Stage 5 statistical-inference detail
-  stage5_writeup.md          THE findings-first writeup — start here
-  figures/                   the six writeup figures (regenerable)
+  stage5_writeup.md          THE core-study findings-first writeup — start here
+  stage7_notes.md … stage7_writeup.md  Stage 7 fleet benchmark: record, plan, review, writeup
+  figures/                   the writeup figures (regenerable)
 docs/
   ERCOT_Battery_Dispatch_Plan_v2.md   full plan: derivations, decisions, execution stages
   step0_spec.md                       Stage 0 build contract
@@ -166,9 +177,14 @@ inference. **The synthesis is [`reports/stage5_writeup.md`](reports/stage5_write
 | 3 — Learned price model | Quantile-regression conditional distribution, calibration | ✅ |
 | 4 — Dynamic program | Optimal causal policy → Q2 (psi_up), Q3 (duration curves) | ✅ |
 | 5 — Statistics & writeup | Walk-forward protocol, sign test, power statement, findings-first writeup | ✅ |
+| 7 — Fleet benchmark *(add-on)* | ~300-asset ERCOT reconstruction from 60-day disclosure, validated vs Modo, our DP located in the fleet | ✅ |
 
-**Stages 0–5 constitute the complete, defensible study.** Stages 6–9 (residential-fleet
-chapter, ~300-asset fleet benchmark, risk/hedging, RL exhibit) are optional add-ons.
+**Stages 0–5 constitute the complete, defensible core study.** The **Stage 7 fleet benchmark**
+(optional add-on) is also complete and adversarially reviewed: it reconstructs the realized revenue
+of ~300 real ERCOT batteries from public disclosure, validates against Modo's published benchmark,
+and locates our modelled DP in the real fleet — the strongest external, fleet-scale evidence in the
+project. Findings: [`reports/stage7_writeup.md`](reports/stage7_writeup.md). Stages 6, 8, 9
+(residential-fleet chapter, risk/hedging, RL exhibit) remain optional.
 
 ## Method notes
 
