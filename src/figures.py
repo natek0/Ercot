@@ -220,6 +220,40 @@ def fig_psi(psi, path):
     fig.savefig(path); plt.close(fig)
 
 
+def fig_fleet_capture(path):
+    """Stage 7 — the real ERCOT fleet's energy-capture distribution with our DP located in it, plus
+    the joint energy+AS capture that shows the fleet is well-run. Reads the Stage 7 caches."""
+    import matplotlib.pyplot as plt
+    xs = pd.read_parquet("data/raw/stage7_energy_cross_section.parquet")
+    xs = xs[xs["capture"].notna()]
+    real = xs["capture"].to_numpy() * 100
+    joint = xs["joint_capture"].dropna().to_numpy() * 100 if "joint_capture" in xs else None
+    loc = pd.read_parquet("data/raw/stage7_locate_policy.parquet") if os.path.exists(
+        "data/raw/stage7_locate_policy.parquet") else None
+    fig, ax = plt.subplots(figsize=(8.4, 4.6))
+    ax.hist(real, bins=np.linspace(0, 100, 26), color=C["ceiling"], alpha=0.55,
+            label=f"real fleet, energy-only (median {np.median(real):.0f}%)", zorder=2)
+    ax.axvline(np.median(real), color=C["ceiling"], lw=1.5, ls="--")
+    if loc is not None and loc["our_dp_capture"].notna().any():
+        our = (loc["our_dp_capture"].dropna().to_numpy()) * 100
+        ax.axvline(np.median(our), color=C["dp"], lw=2.5,
+                   label=f"our DP, fair (median {np.median(our):.0f}%)")
+    if joint is not None:
+        ax.axvline(np.median(joint), color=C["pf"], lw=2,
+                   label=f"real fleet, energy+AS joint (median {np.median(joint):.0f}%)")
+    ax.set_xlabel("capture rate, % of the perfect-foresight ceiling")
+    ax.set_ylabel("number of batteries")
+    ax.set_title("Fig 7 — locating our DP in the real ERCOT fleet")
+    ax.legend(fontsize=9, loc="upper right")
+    fig.savefig(path); plt.close(fig)
+
+
+def stage7_figures():
+    _style(); os.makedirs(FIGDIR, exist_ok=True)
+    fig_fleet_capture(f"{FIGDIR}/fig7_fleet_capture.png")
+    print(f"wrote Stage 7 figure to {FIGDIR}/fig7_fleet_capture.png")
+
+
 def main():
     _style()
     os.makedirs(FIGDIR, exist_ok=True)

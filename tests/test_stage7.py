@@ -200,6 +200,9 @@ def test_realized_energy_two_settlement_sql():
     assert r.da_energy_rev == pytest.approx(100.0)
     assert r.rt_dev_rev == pytest.approx(200.0)
     assert r.realized_energy_rev == pytest.approx(300.0)
+    # RT-physical value of the actual dispatch (telem x RT LMP) = 10*40*0.25*4 = 400 — the
+    # apples-to-apples capture numerator vs the RT-priced ceiling (A-review A3 fix).
+    assert r.realized_rt_physical == pytest.approx(400.0)
 
 
 def test_as_capacity_revenue():

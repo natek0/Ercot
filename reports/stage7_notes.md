@@ -15,6 +15,38 @@ role (Base Power, Markets quant intern).
 what the real ERCOT batteries EARNED, compute what each COULD have earned (its own perfect-foresight
 ceiling), publish the capture distribution, and locate our modelled Stage-4 DP within the real fleet.
 
+> **Round-2 update (post three-agent adversarial review + synthesizer, reports `stage7_review_*.md`).**
+> The review verdict: **the reconstruction is sound — every headline reproduces to the dollar, no join
+> fan-out, the AS two-settlement is the correct RTC+B structure (confirmed by the desk-quant reviewer)
+> — no blocker.** The problems were two *overstated comparative claims*, now FIXED (all de-confounding,
+> none manufactures a better number):
+> - **Capture basis (A/A3, A/M1):** capture is now the **RT-physical realized value / RT ceiling on
+>   traded days** (apples-to-apples) → **median 34%** (was 35%), **max 83%** (was an impossible 121%
+>   from a two-settlement-numerator-vs-RT-ceiling mismatch); the ceiling now excludes ~10
+>   pre-commissioning days it was inflated over (~3-4%).
+> - **C1 (A2):** the shipped "$1.74 in a $1-4 band" was too lax (band widened post-hoc from $3-6).
+>   Replaced with the **pre-registered MONTHLY test**: our shape **MATCHES Modo (Jan>Apr>Feb)** but the
+>   **level is systematically ~21% light** (Jan 0.74, Feb 0.83, Apr 0.80). Honest verdict: **shape
+>   validated, level tracks to ~20%** — NOT "validated" full stop. The ~20% residual is the diagnosable
+>   finding (candidate causes: AS two-settlement under-count, telemetered-vs-SMNE energy, scarcity-day
+>   node-price gaps).
+> - **Joint capture (B1):** delivered the pre-registered **energy+AS joint** ceiling → fleet **joint
+>   capture median 76% [95% CI 71-81%]**, squarely in the 50-80% "well-run operator" band. **This is
+>   the key reframe:** the low energy-only 34% is NOT a skill deficit — operators rationally hold SOC
+>   to sell (cheap but positive) AS, sacrificing energy arbitrage; the joint number is the fair measure
+>   of fleet skill, and it is healthy.
+> - **CIs + gap audit + figure (B2, B3):** bootstrap CIs on the fleet median capture; a node-price gap
+>   audit (4 days <90% coverage — a **genuine ERCOT NP6-905 gap** on the early-May scarcity block, a
+>   fresh fetch returns the same partial data — <1% of $, documented); a fleet-capture distribution
+>   figure. **ECRSMD (A/M4): REFUTED** — the raw DAM file has only `ECRSSD Awarded`; the parser is
+>   correct and complete.
+> - **Locate-our-policy (the pivotal must-fix):** re-run **FAIR** — gross-vs-gross, matched
+>   post-warm-up window (Feb-1+), ceiling on that same window. The synthesizer's 40-asset recompute
+>   landed at **~32% capture / ~30th percentile** (the shipped **10% / 14th was ~2x inflated** by a
+>   net-vs-gross + warm-up-vs-full-window confound). **The "our DP is information-limited" conclusion
+>   SURVIVES** (still below the fleet median, not near the bottom); the full-fleet fair number is being
+>   recomputed. §8 below is the ORIGINAL self-critique; these Round-2 fixes address items 1-6, 8.
+
 ---
 
 ## 1. Data acquisition (all public, free, stream-and-discard)
